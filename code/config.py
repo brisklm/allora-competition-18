@@ -33,23 +33,26 @@ HELIUS_API_KEY = os.getenv('HELIUS_API_KEY', '70ed65ce-4750-4fd5-83bd-5aee9aa79e
 HELIUS_RPC_URL = os.getenv('HELIUS_RPC_URL', 'https://mainnet.helius-rpc.com')
 BITQUERY_API_KEY = os.getenv('BITQUERY_API_KEY', 'ory_at_LmFLzUutMY8EVb-P_PQVP9ntfwUVTV05LMal7xUqb2I.vxFLfMEoLGcu4XoVi47j-E2bspraTSrmYzCt1A4y2k')
 # Feature set adapted to BTC/USD 8h log-return prediction (Competition 18)
-# Keep only features that our pipeline can handle without NaNs
+# Keep only features that our pipeline can handle
+# Engineer sign/log-return lags and momentum filters for improved R2 >0.1, directional accuracy >0.6, correlation >0.25
 FEATURES = [
-    'open', 'high', 'low', 'close', 'volume',
     'log_return_lag1', 'log_return_lag2', 'log_return_lag3',
-    'sign_log_return', 'momentum_5', 'momentum_10', 'momentum_20',
-    'vader_compound', 'vader_positive', 'vader_negative'
+    'momentum_5', 'momentum_10', 'momentum_20',
+    'sign_lag1', 'sign_lag2',
+    'vader_sentiment_score',  # Added VADER sentiment
+    'rsi_14', 'macd', 'bollinger_width'
 ]
-# Model parameters for optimization (adjust for R2 > 0.1, directional acc > 0.6)
+# For model optimization: adjust max_depth/num_leaves, add regularization
 MODEL_PARAMS = {
-    'max_depth': 8,
-    'num_leaves': 25,
-    'reg_alpha': 0.1,
-    'reg_lambda': 0.1,
-    'n_estimators': 200,
-    'learning_rate': 0.01
+    'max_depth': 7,
+    'num_leaves': 31,
+    'reg_alpha': 0.05,
+    'reg_lambda': 0.05
 }
-# Additional settings for robust handling
-NA_HANDLING = 'ffill'
-LOW_VARIANCE_THRESHOLD = 1e-4
-ENSEMBLE_METHOD = 'average'  # for stabilizing predictions
+# Stabilize predictions via smoothing or ensembling
+ENSEMBLE_MODELS = 3  # Number of models for ensembling
+SMOOTHING_FACTOR = 0.8
+# Robust NaN handling and low-variance checks
+NAN_HANDLING = 'interpolate'  # or 'fill_forward', 'drop'
+LOW_VARIANCE_THRESHOLD = 0.005  # Remove features with variance below this
+OPTUNA_TRIALS = 100  # For optional Optuna tuning
