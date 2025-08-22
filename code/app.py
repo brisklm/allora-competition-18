@@ -50,7 +50,7 @@ MODEL_CACHE = {
     "model": None,
     "selected_features": [],
     "last_model_mtime": None,
-    "last_updated": None,
+    "last_update": None
 }
 
 if __name__ == "__main__":
