@@ -6,11 +6,13 @@ from dotenv import load_dotenv
 import numpy as np
 import joblib
 import subprocess
-from config import model_file_path, selected_features_path, NAN_HANDLING, scaler_file_path, LOW_VARIANCE_THRESHOLD
+from config import model_file_path, selected_features_path, NAN_HANDLING, scaler_file_path, LOW_VARIANCE_THRESHOLD, SentimentIntensityAnalyzer, optuna
 
+# Initialize app and env
 app = Flask(__name__)
 load_dotenv()
 
+# Dynamic version tag for visibility in logs
 COMPETITION = os.getenv("COMPETITION", "competition18")
 TOPIC_ID = os.getenv("TOPIC_ID", "64")
 TOKEN = os.getenv("TOKEN", "BTC")
@@ -18,10 +20,28 @@ TIMEFRAME = os.getenv("TIMEFRAME", "8h")
 MCP_VERSION = f"{datetime.utcnow().date()}-{COMPETITION}-topic{TOPIC_ID}-app-{TOKEN.lower()}-{TIMEFRAME}"
 FLASK_PORT = int(os.getenv("FLASK_PORT", 9001))
 
+# Load model and scaler
+try:
+    model = joblib.load(model_file_path)
+    scaler = joblib.load(scaler_file_path)
+    with open(selected_features_path, 'r') as f:
+        selected_features = json.load(f)
+except FileNotFoundError:
+    model = None
+    scaler = None
+    selected_features = []
+
+# VADER setup
+if SentimentIntensityAnalyzer is not None:
+    sia = SentimentIntensityAnalyzer()
+else:
+    sia = None
+
+# TOOLS
 TOOLS = [
     {
         "name": "optimize",
-        "description": "Triggers model optimization using Optuna tuning and returns results.",
+        "description": "Triggers model optimization using Optuna tuning with enhanced hyperparameters for better R2 and directional accuracy. Includes regularization and ensembling.",
         "parameters": {}
     },
     {
@@ -45,40 +65,45 @@ TOOLS = [
     }
 ]
 
-@app.route('/mcp/tools', methods=['GET'])
+@app.route('/tools', methods=['GET'])
 def get_tools():
     return jsonify(TOOLS)
 
-@app.route('/mcp/tool/optimize', methods=['POST'])
-def run_optimize():
-    # Assuming a script or function for Optuna optimization
+@app.route('/optimize', methods=['POST'])
+def optimize():
+    if optuna is None:
+        return jsonify({"error": "Optuna not available"}), 500
     try:
-        result = subprocess.run(['python', 'train.py', '--optimize'], capture_output=True, text=True)  # Example
-        return jsonify({'result': result.stdout})
+        result = subprocess.run(['python', 'train.py', '--optuna'], capture_output=True, text=True)
+        return jsonify({"result": result.stdout, "error": result.stderr})
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": str(e)}), 500
 
-# Add prediction endpoint for compatibility
 @app.route('/predict', methods=['POST'])
 def predict():
+    if model is None:
+        return jsonify({"error": "Model not loaded"}), 500
     data = request.json
-    # Load model and scaler
-    model = joblib.load(model_file_path)
-    scaler = joblib.load(scaler_file_path)
-    # Assume input features, handle NaN, low variance (simplified)
-    features = np.array(data['features'])
+    features = [data.get(f, np.nan) for f in selected_features]
+    # Robust NaN handling
     if NAN_HANDLING == 'mean':
-        features = np.nan_to_num(features, nan=np.nanmean(features))
-    # Low variance check (example, not full impl)
-    var = np.var(features, axis=0)
-    mask = var > LOW_VARIANCE_THRESHOLD
-    features = features[:, mask]
-    scaled = scaler.transform([features])
-    pred = model.predict(scaled)
-    # Stabilize with simple smoothing (example: average with prev if available)
-    if 'prev_pred' in data:
-        pred = (pred + data['prev_pred']) / 2
-    return jsonify({'prediction': pred.tolist()})
+        features = [0 if np.isnan(f) else f for f in features]  # Simplified; use precomputed means in production
+    features = np.array(features).reshape(1, -1)
+    # Low variance check
+    if np.var(features) < LOW_VARIANCE_THRESHOLD:
+        return jsonify({"prediction": 0, "warning": "Low variance input"})
+    features_scaled = scaler.transform(features)
+    prediction = model.predict(features_scaled)[0]
+    return jsonify({"prediction": prediction})
+
+@app.route('/sentiment', methods=['POST'])
+def get_sentiment():
+    if sia is None:
+        return jsonify({"error": "VADER not available"}), 500
+    data = request.json
+    text = data.get('text', '')
+    scores = sia.polarity_scores(text)
+    return jsonify(scores)
 
 if __name__ == '__main__':
     app.run(port=FLASK_PORT, debug=True)
