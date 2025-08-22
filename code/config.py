@@ -34,5 +34,5 @@ FEATURES = ['log_return_lag1', 'log_return_lag2', 'log_return_lag3', 'sign_retur
 OPTUNA_TRIALS = 200
 MODEL_PARAMS = {'max_depth': 8, 'num_leaves': 50, 'reg_alpha': 0.01, 'reg_lambda': 0.01}
 ENABLE_ENSEMBLE = True
-NAN_HANDLING = 'fillna_median'
-LOW_VARIANCE_THRESHOLD = 0.01
+NAN_HANDLING = 'fillna_mean'
+LOW_VARIANCE_THRESHOLD = 0.001
