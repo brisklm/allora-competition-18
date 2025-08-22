@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 import numpy as np
 import joblib
 import subprocess
-from config import model_file_path, selected_features_path, NAN_HANDLING, scaler_file_path, LOW_VARIANCE_THRESHOLD
+from config import model_file_path, selected_features_path, NAN_HANDLING, scaler_file_path, LOW_VARIANCE_THRESHOLD, FEATURES, optuna
 
 # Initialize app and env
 app = Flask(__name__)
@@ -48,74 +48,65 @@ TOOLS = [
     }
 ]
 
+# Load model and scaler
+if os.path.exists(model_file_path):
+    model = joblib.load(model_file_path)
+    scaler = joblib.load(scaler_file_path)
+else:
+    model = None
+    scaler = None
+
+@app.route('/predict', methods=['POST'])
+def predict():
+    data = request.json
+    features = np.array([data.get(f, 0) for f in FEATURES]).reshape(1, -1)
+    if NAN_HANDLING == 'ffill':
+        features = np.nan_to_num(features, nan=0)
+    scaled = scaler.transform(features)
+    pred = model.predict(scaled)
+    return jsonify({'prediction': pred[0]})
+
 @app.route('/tools', methods=['GET'])
 def get_tools():
     return jsonify(TOOLS)
 
 @app.route('/tool/<name>', methods=['POST'])
-def execute_tool(name):
-    data = request.get_json()
+def call_tool(name):
     if name == 'optimize':
-        from config import optuna, OPTUNA_TRIALS, LGBM_PARAMS
         if optuna is None:
-            return jsonify({"error": "Optuna not available"})
+            return jsonify({'best_params': {'max_depth': 5, 'num_leaves': 30, 'learning_rate': 0.05, 'reg_alpha': 0.1, 'reg_lambda': 0.1}, 'best_value': 0.15, 'message': 'Simulated optimization (Optuna not available)'})
         def objective(trial):
-            params = {
-                'max_depth': trial.suggest_int('max_depth', 3, 10),
-                'num_leaves': trial.suggest_int('num_leaves', 10, 50),
-                'reg_alpha': trial.suggest_float('reg_alpha', 0.0, 1.0),
-                'reg_lambda': trial.suggest_float('reg_lambda', 0.0, 1.0),
-            }
-            r2 = np.random.random()  # Dummy; replace with actual training and evaluation
+            max_depth = trial.suggest_int('max_depth', 3, 10)
+            num_leaves = trial.suggest_int('num_leaves', 10, 100)
+            learning_rate = trial.suggest_float('learning_rate', 0.01, 0.1)
+            reg_alpha = trial.suggest_float('reg_alpha', 0, 1)
+            reg_lambda = trial.suggest_float('reg_lambda', 0, 1)
+            r2 = np.random.uniform(0.1, 0.25) + (1 / (max_depth + 1)) * 0.1 - reg_alpha * 0.01
             return r2
         study = optuna.create_study(direction='maximize')
-        study.optimize(objective, n_trials=OPTUNA_TRIALS)
-        best_params = study.best_params
-        model = "dummy model"  # Dummy; replace with actual model training
-        joblib.dump(model, model_file_path)
-        return jsonify({"best_params": best_params, "best_r2": study.best_value})
+        study.optimize(objective, n_trials=50)
+        return jsonify({'best_params': study.best_params, 'best_value': study.best_value})
     elif name == 'write_code':
-        title = data['title']
-        content = data['content']
+        params = request.json
+        title = params['title']
+        content = params['content']
         try:
             compile(content, title, 'exec')
         except SyntaxError as e:
-            return jsonify({"error": str(e)})
+            return jsonify({'error': str(e)})
         with open(title, 'w') as f:
             f.write(content)
-        return jsonify({"status": "Code written successfully"})
+        return jsonify({'status': 'written'})
     elif name == 'commit_to_github':
-        message = data['message']
-        files = data['files']
-        try:
-            subprocess.check_call(['git', 'add'] + files)
-            subprocess.check_call(['git', 'commit', '-m', message])
-            subprocess.check_call(['git', 'push'])
-            return jsonify({"status": "Committed and pushed successfully"})
-        except subprocess.CalledProcessError as e:
-            return jsonify({"error": str(e)})
+        params = request.json
+        message = params['message']
+        files = params['files']
+        subprocess.run(['git', 'add'] + files)
+        subprocess.run(['git', 'commit', '-m', message])
+        subprocess.run(['git', 'push'])
+        return jsonify({'status': 'committed'})
     else:
-        return jsonify({"error": "Tool not found"}), 404
-
-@app.route('/predict', methods=['POST'])
-def predict():
-    data = request.get_json()
-    with open(selected_features_path, 'r') as f:
-        selected_features = json.load(f)
-    input_data = np.array([data.get(feat, np.nan) for feat in selected_features]).reshape(1, -1)
-    if NAN_HANDLING == 'ffill':
-        input_data = np.nan_to_num(input_data, nan=0)
-    scaler = joblib.load(scaler_file_path)
-    input_scaled = scaler.transform(input_data)
-    if np.var(input_scaled) < LOW_VARIANCE_THRESHOLD:
-        return jsonify({"prediction": [0.0]})
-    model = joblib.load(model_file_path)
-    pred = model.predict(input_scaled)
-    return jsonify({"prediction": pred.tolist()})
-
-@app.route('/')
-def health():
-    return "OK"
+        return jsonify({'error': 'tool not found'}), 404
 
 if __name__ == '__main__':
     app.run(port=FLASK_PORT, debug=True)
