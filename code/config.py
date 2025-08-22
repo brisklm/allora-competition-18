@@ -1,15 +1,14 @@
 import os
 from datetime import datetime
 import numpy as np
-# Optional: avoid hard dependency on nltk in runtime
 try:
-    from nltk.sentiment.vader import SentimentIntensityAnalyzer  # type: ignore
-except Exception:  # pragma: no cover
-    SentimentIntensityAnalyzer = None  # type: ignore
+    from nltk.sentiment.vader import SentimentIntensityAnalyzer
+except Exception:
+    SentimentIntensityAnalyzer = None
 try:
-    import optuna  # noqa: F401
-except Exception:  # pragma: no cover
-    optuna = None  # type: ignore
+    import optuna
+except Exception:
+    optuna = None
 data_base_path = os.path.join(os.getcwd(), 'data')
 model_file_path = os.path.join(data_base_path, 'model.pkl')
 scaler_file_path = os.path.join(data_base_path, 'scaler.pkl')
@@ -20,9 +19,6 @@ sol_source_path = os.path.join(data_base_path, os.getenv('SOL_SOURCE', 'raw_sol.
 eth_source_path = os.path.join(data_base_path, os.getenv('ETH_SOURCE', 'raw_eth.csv'))
 features_sol_path = os.path.join(data_base_path, os.getenv('FEATURES_PATH', 'features_sol.csv'))
 features_eth_path = os.path.join(data_base_path, os.getenv('FEATURES_PATH_ETH', 'features_eth.csv'))
-btc_source_path = os.path.join(data_base_path, os.getenv('BTC_SOURCE', 'raw_btc.csv'))
-features_btc_path = os.path.join(data_base_path, 'features_btc.csv')
-# Competition 18: BTC/USD 8h log-return prediction (5min updates)
 TOKEN = os.getenv('TOKEN', 'BTC')
 TIMEFRAME = os.getenv('TIMEFRAME', '8h')
 TRAINING_DAYS = int(os.getenv('TRAINING_DAYS', 365))
@@ -34,21 +30,9 @@ CG_API_KEY = os.getenv('CG_API_KEY', 'CG-xA5NyokGEVbc4bwrvJPcpZvT')
 HELIUS_API_KEY = os.getenv('HELIUS_API_KEY', '70ed65ce-4750-4fd5-83bd-5aee9aa79ead')
 HELIUS_RPC_URL = os.getenv('HELIUS_RPC_URL', 'https://mainnet.helius-rpc.com')
 BITQUERY_API_KEY = os.getenv('BITQUERY_API_KEY', 'ory_at_LmFLzUutMY8EVb-P_PQVP9ntfwUVTV05LMal7xUqb2I.vxFLfMEoLGcu4XoVi47j-E2bspraTSrmYzCt1A4y2k')
-# Feature set adapted to BTC/USD 8h log-return prediction (Competition 18)
-# Keep only features that our pipeline can handle
-FEATURES = ['log_return_lag1', 'log_return_lag2', 'sign', 'momentum', 'vader_compound', 'volume', 'rsi_14', 'macd', 'bollinger_width']
-# Model parameters for optimization (adjust max_depth/num_leaves; add regularization)
-MODEL_PARAMS = {
-    'lstm': {'hidden_size': 128, 'dropout': 0.3, 'num_layers': 3},
-    'lightgbm': {'max_depth': 6, 'num_leaves': 20, 'reg_alpha': 0.2, 'reg_lambda': 0.2}
-}
-# Targets for improvement
-TARGET_R2 = 0.1
-TARGET_DIR_ACC = 0.6
-TARGET_CORR = 0.25
-# Additional settings for stability and handling
-NAN_HANDLING = 'ffill'
-LOW_VARIANCE_THRESHOLD = 1e-5
-SMOOTHING = 'ewma'
-ENSEMBLE = True
-TARGET = 'log_return_8h'
+FEATURES = ['log_return_lag1', 'log_return_lag2', 'sign_return', 'momentum_filter_1', 'vader_sentiment_compound']
+OPTUNA_TRIALS = 100
+MODEL_PARAMS = {'max_depth': 8, 'num_leaves': 25, 'reg_alpha': 0.05, 'reg_lambda': 0.05}
+ENABLE_ENSEMBLE = True
+NAN_HANDLING = 'fillna_mean'
+LOW_VARIANCE_THRESHOLD = 0.005
