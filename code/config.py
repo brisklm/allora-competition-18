@@ -3,9 +3,8 @@ from datetime import datetime
 import numpy as np
 try:
     from nltk.sentiment.vader import SentimentIntensityAnalyzer
-    sia = SentimentIntensityAnalyzer()
 except Exception:
-    sia = None
+    SentimentIntensityAnalyzer = None
 try:
     import optuna
 except Exception:
@@ -31,10 +30,10 @@ CG_API_KEY = os.getenv('CG_API_KEY', 'CG-xA5NyokGEVbc4bwrvJPcpZvT')
 HELIUS_API_KEY = os.getenv('HELIUS_API_KEY', '70ed65ce-4750-4fd5-83bd-5aee9aa79ead')
 HELIUS_RPC_URL = os.getenv('HELIUS_RPC_URL', 'https://mainnet.helius-rpc.com')
 BITQUERY_API_KEY = os.getenv('BITQUERY_API_KEY', 'ory_at_LmFLzUutMY8EVb-P_PQVP9ntfwUVTV05LMal7xUqb2I.vxFLfMEoLGcu4XoVi47j-E2bspraTSrmYzCt1A4y2k')
-
-# Optimized features for better prediction
-FEATURES = ['log_return_lag1', 'log_return_lag2', 'log_return_lag3', 'log_return_lag4', 'log_return_lag5', 'log_return_lag6', 'log_return_lag7', 'log_return_lag8', 'log_return_lag9', 'log_return_lag10', 'sign_return', 'sign_return_lag1', 'sign_return_lag2', 'sign_return_lag3', 'sign_return_lag4', 'sign_return_lag5', 'sign_return_lag6', 'sign_return_lag7', 'momentum_filter_1', 'momentum_filter_2', 'momentum_filter_3', 'momentum_filter_4', 'momentum_filter_5', 'momentum_filter_6', 'sentiment_compound', 'sentiment_positive', 'sentiment_negative']
-
-# Robust NaN handling and low-variance threshold
-NAN_HANDLING = 'ffill'  # Forward fill for time series continuity, fallback to mean
-LOW_VARIANCE_THRESHOLD = 0.0001  # Filter features with variance below this
+FEATURES = ['log_return_lag1', 'log_return_lag2', 'log_return_lag3', 'log_return_lag4', 'log_return_lag5', 'log_return_lag6', 'log_return_lag7', 'sign_return', 'sign_return_lag1', 'sign_return_lag2', 'sign_return_lag3', 'sign_return_lag4', 'sign_return_lag5', 'momentum_filter_1', 'momentum_filter_2', 'momentum_filter_3', 'momentum_filter_4', 'momentum_filter_5', 'vader_compound', 'vader_pos', 'vader_neg']
+NAN_HANDLING = os.getenv('NAN_HANDLING', 'mean')  # Options: 'mean', 'zero', 'drop'
+LOW_VARIANCE_THRESHOLD = 1e-5
+# Additional configs for optimization
+DIRECTIONAL_ACCURACY_TARGET = 0.6
+R2_TARGET = 0.1
+CORRELATION_TARGET = 0.25
