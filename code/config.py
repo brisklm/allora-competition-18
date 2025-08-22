@@ -30,8 +30,25 @@ CG_API_KEY = os.getenv('CG_API_KEY', 'CG-xA5NyokGEVbc4bwrvJPcpZvT')
 HELIUS_API_KEY = os.getenv('HELIUS_API_KEY', '70ed65ce-4750-4fd5-83bd-5aee9aa79ead')
 HELIUS_RPC_URL = os.getenv('HELIUS_RPC_URL', 'https://mainnet.helius-rpc.com')
 BITQUERY_API_KEY = os.getenv('BITQUERY_API_KEY', 'ory_at_LmFLzUutMY8EVb-P_PQVP9ntfwUVTV05LMal7xUqb2I.vxFLfMEoLGcu4XoVi47j-E2bspraTSrmYzCt1A4y2k')
-FEATURES = ['log_return_lag1', 'log_return_lag2', 'log_return_lag3', 'log_return_lag4', 'log_return_lag5', 'log_return_lag6', 'log_return_lag7', 'sign_return', 'sign_return_lag1', 'sign_return_lag2', 'sign_return_lag3', 'sign_return_lag4', 'sign_return_lag5', 'momentum_filter_1', 'momentum_filter_2', 'momentum_filter_3', 'momentum_filter_4', 'momentum_filter_5', 'momentum_filter_6', 'vader_sentiment_compound']
-OPTUNA_TRIALS = 1000
 NAN_HANDLING = 'mean'
 LOW_VARIANCE_THRESHOLD = 0.01
-MODEL_PARAMS = {'LightGBM': {'objective': 'regression', 'metric': 'rmse', 'verbose': -1, 'learning_rate': 0.01, 'num_leaves': 255, 'max_depth': 8, 'min_data_in_leaf': 20, 'lambda_l1': 0.1, 'lambda_l2': 0.1, 'feature_fraction': 0.8, 'bagging_fraction': 0.8, 'bagging_freq': 5}}
+FEATURES = [
+    'log_return_lag1', 'log_return_lag2', 'log_return_lag3', 'log_return_lag4', 'log_return_lag5', 'log_return_lag6', 'log_return_lag7',
+    'log_return_lag8', 'log_return_lag9', 'log_return_lag10',  # Added for better prediction
+    'sign_return', 'sign_return_lag1', 'sign_return_lag2', 'sign_return_lag3', 'sign_return_lag4', 'sign_return_lag5',
+    'sign_return_lag6', 'sign_return_lag7', 'sign_return_lag8',  # Added for directional accuracy
+    'momentum_filter_1', 'momentum_filter_2', 'momentum_filter_3', 'momentum_filter_4', 'momentum_filter_5',  # Added for momentum
+    'vader_sentiment_compound', 'vader_sentiment_positive', 'vader_sentiment_negative', 'vader_sentiment_neutral'  # VADER sentiment
+]
+LGBM_PARAMS = {
+    'objective': 'regression',
+    'metric': 'rmse',
+    'max_depth': 6,
+    'num_leaves': 31,
+    'learning_rate': 0.01,
+    'feature_fraction': 0.9,
+    'bagging_fraction': 0.8,
+    'bagging_freq': 5,
+    'reg_alpha': 0.1,  # Regularization
+    'reg_lambda': 0.1  # Regularization
+}
