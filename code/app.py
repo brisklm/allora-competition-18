@@ -7,13 +7,12 @@ import numpy as np
 import joblib
 import subprocess
 from config import model_file_path, selected_features_path, NAN_HANDLING, scaler_file_path, LOW_VARIANCE_THRESHOLD
-import optuna
-from sklearn.metrics import r2_score, accuracy_score
-from lightgbm import LGBMRegressor
 
+# Initialize app and env
 app = Flask(__name__)
 load_dotenv()
 
+# Dynamic version tag for visibility in logs
 COMPETITION = os.getenv("COMPETITION", "competition18")
 TOPIC_ID = os.getenv("TOPIC_ID", "64")
 TOKEN = os.getenv("TOKEN", "BTC")
@@ -21,10 +20,11 @@ TIMEFRAME = os.getenv("TIMEFRAME", "8h")
 MCP_VERSION = f"{datetime.utcnow().date()}-{COMPETITION}-topic{TOPIC_ID}-app-{TOKEN.lower()}-{TIMEFRAME}"
 FLASK_PORT = int(os.getenv("FLASK_PORT", 9001))
 
+# MCP Tools
 TOOLS = [
     {
         "name": "optimize",
-        "description": "Triggers model optimization using Optuna tuning and returns results.",
+        "description": "Triggers model optimization using Optuna tuning and returns results. Includes sentiment analysis with VADER, NaN handling, low-variance feature removal, and parameter adjustments for better R2 and directional accuracy.",
         "parameters": {}
     },
     {
@@ -52,39 +52,39 @@ TOOLS = [
 def get_tools():
     return jsonify(TOOLS)
 
-@app.route('/tools/optimize', methods=['POST'])
-def optimize():
-    def objective(trial):
-        max_depth = trial.suggest_int('max_depth', 3, 15)
-        num_leaves = trial.suggest_int('num_leaves', 20, 150)
-        reg_alpha = trial.suggest_float('reg_alpha', 0.0, 1.0)
-        reg_lambda = trial.suggest_float('reg_lambda', 0.0, 1.0)
-        model = LGBMRegressor(max_depth=max_depth, num_leaves=num_leaves, reg_alpha=reg_alpha, reg_lambda=reg_lambda)
-        return np.random.random()  # Replace with actual training and scoring
-    study = optuna.create_study(direction='maximize')
-    study.optimize(objective, n_trials=50)
-    best_params = study.best_params
-    return jsonify({"best_params": best_params, "message": "Optimization complete"})
-
-@app.route('/tools/write_code', methods=['POST'])
-def write_code():
-    data = request.json
-    title = data['title']
-    content = data['content']
-    with open(title, 'w') as f:
-        f.write(content)
-    return jsonify({"message": f"Code written to {title}"})
-
-@app.route('/tools/commit_to_github', methods=['POST'])
-def commit_to_github():
-    data = request.json
-    message = data['message']
-    files = data['files']
-    for file in files:
-        subprocess.run(['git', 'add', file])
-    subprocess.run(['git', 'commit', '-m', message])
-    subprocess.run(['git', 'push'])
-    return jsonify({"message": "Committed to GitHub"})
+@app.route('/invoke/<tool_name>', methods=['POST'])
+def invoke(tool_name):
+    if tool_name == 'optimize':
+        try:
+            result = subprocess.run(['python', 'optimize.py'], capture_output=True, text=True)
+            return jsonify({"result": result.stdout})
+        except Exception as e:
+            return jsonify({"error": str(e)})
+    elif tool_name == 'write_code':
+        data = request.json
+        title = data['title']
+        content = data['content']
+        import ast
+        try:
+            ast.parse(content)
+        except SyntaxError as e:
+            return jsonify({"error": f"Syntax error: {str(e)}"})
+        with open(title, 'w') as f:
+            f.write(content)
+        return jsonify({"success": True})
+    elif tool_name == 'commit_to_github':
+        data = request.json
+        message = data['message']
+        files = data['files']
+        try:
+            subprocess.run(['git', 'add'] + files, check=True)
+            subprocess.run(['git', 'commit', '-m', message], check=True)
+            subprocess.run(['git', 'push'], check=True)
+            return jsonify({"success": True})
+        except Exception as e:
+            return jsonify({"error": str(e)})
+    else:
+        return jsonify({"error": "Unknown tool"})
 
 if __name__ == '__main__':
     app.run(port=FLASK_PORT)
