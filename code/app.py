@@ -21,7 +21,7 @@ FLASK_PORT = int(os.getenv("FLASK_PORT", 9001))
 TOOLS = [
     {
         "name": "optimize",
-        "description": "Triggers model optimization using Optuna tuning and returns results. Aims to improve R2 above 0.1, directional accuracy above 0.6, correlation above 0.25 via parameter adjustments, regularization, and feature engineering.",
+        "description": "Triggers model optimization using Optuna tuning and returns results.",
         "parameters": {}
     },
     {
@@ -50,7 +50,16 @@ MODEL_CACHE = {
     "model": None,
     "selected_features": [],
     "last_model_mtime": None,
-    "last_update": None
+    "last_update_time": None
 }
 
-# Note: Additional endpoints and functions would be defined here for compatibility, but omitted for brevity. Ensure NaN handling and low-variance checks in model loading/inference.
+@app.route('/')
+def version():
+    return MCP_VERSION
+
+@app.route('/tools', methods=['GET'])
+def get_tools():
+    return jsonify(TOOLS)
+
+if __name__ == '__main__':
+    app.run(port=FLASK_PORT, debug=True)
