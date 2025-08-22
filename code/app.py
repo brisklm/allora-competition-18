@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 import numpy as np
 import joblib
 import subprocess
+import config
 
 # Initialize app and env
 app = Flask(__name__)
@@ -54,77 +55,38 @@ MODEL_CACHE = {
     "last_modified": None
 }
 
-import config
-
 def load_model():
-    model_path = config.model_file_path
-    if not os.path.exists(model_path):
-        return None
-    mod_time = os.path.getmtime(model_path)
-    if MODEL_CACHE["model"] is None or MODEL_CACHE["last_modified"] != mod_time:
-        MODEL_CACHE["model"] = joblib.load(model_path)
+    if MODEL_CACHE["model"] is None or (datetime.now() - MODEL_CACHE["last_modified"]).days > 0:
+        MODEL_CACHE["model"] = joblib.load(config.model_file_path)
         with open(config.selected_features_path, 'r') as f:
             MODEL_CACHE["selected_features"] = json.load(f)
-        MODEL_CACHE["last_modified"] = mod_time
-    return MODEL_CACHE["model"], MODEL_CACHE["selected_features"]
+        MODEL_CACHE["last_modified"] = datetime.now()
 
-@app.route('/tools', methods=['GET'])
-def get_tools():
-    return jsonify(TOOLS)
-
-@app.route('/invoke/<tool_name>', methods=['POST'])
-def invoke_tool(tool_name):
-    data = request.json
-    if tool_name == "optimize":
-        try:
-            result = subprocess.run(['python', 'optimize.py'], capture_output=True, text=True)
-            return jsonify({"status": "success", "output": result.stdout})
-        except Exception as e:
-            return jsonify({"status": "error", "message": str(e)})
-    elif tool_name == "write_code":
-        title = data.get("title")
-        content = data.get("content")
-        contentType = data.get("contentType", "text/python")
-        if contentType == "text/python":
-            try:
-                compile(content, title, 'exec')
-            except SyntaxError as e:
-                return jsonify({"status": "error", "message": f"Syntax error: {str(e)}"})
-        with open(title, 'w') as f:
-            f.write(content)
-        return jsonify({"status": "success", "message": f"File {title} written"})
-    elif tool_name == "commit_to_github":
-        message = data.get("message")
-        files = data.get("files", [])
-        try:
-            subprocess.run(['git', 'add'] + files, check=True)
-            subprocess.run(['git', 'commit', '-m', message], check=True)
-            subprocess.run(['git', 'push'], check=True)
-            return jsonify({"status": "success"})
-        except Exception as e:
-            return jsonify({"status": "error", "message": str(e)})
-    else:
-        return jsonify({"status": "error", "message": "Unknown tool"})
+def preprocess_input(data):
+    data = np.array(data)
+    if np.var(data) < config.LOW_VARIANCE_THRESHOLD:
+        raise ValueError("Input data has low variance")
+    if np.any(np.isnan(data)):
+        mask = np.isnan(data)
+        idx = np.where(~mask)[0]
+        data[mask] = np.interp(np.flatnonzero(mask), idx, data[~mask])
+    return data
 
 @app.route('/predict', methods=['POST'])
 def predict():
-    data = request.json
-    model, features = load_model()
-    if model is None:
-        return jsonify({"error": "Model not loaded"})
-    input_data = np.array([[data.get(f, 0) for f in features]])
-    if np.any(np.isnan(input_data)):
-        input_data = np.nan_to_num(input_data)  # Robust NaN handling
-    if np.var(input_data) < 1e-6:  # Low-variance check
-        return jsonify({"error": "Input has low variance, unstable prediction"})
-    prediction = model.predict(input_data)[0]
-    # Stabilize via simple smoothing (e.g., average with 0 for demo; in practice, use ensemble or history)
-    smoothed_prediction = (prediction + 0) / 2  # Placeholder for smoothing
-    return jsonify({"prediction": smoothed_prediction})
+    load_model()
+    input_data = request.json.get('data', [])
+    processed_data = preprocess_input(input_data)
+    prediction = MODEL_CACHE["model"].predict([processed_data])[0]
+    # Simple smoothing example (assuming predictions are in cache or something; for single, pass through)
+    return jsonify({'prediction': prediction})
 
-@app.route('/health')
-def health():
-    return "OK"
+@app.route('/optimize', methods=['GET'])
+def optimize():
+    # Trigger Optuna optimization (assume tune_model.py exists and uses config.OPTUNA_TRIALS)
+    subprocess.run(['python', 'tune_model.py'])
+    load_model()
+    return jsonify({'status': 'Model optimized', 'version': MCP_VERSION})
 
 if __name__ == '__main__':
-    app.run(port=FLASK_PORT, debug=True)
+    app.run(port=FLASK_PORT)
