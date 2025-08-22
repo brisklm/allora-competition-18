@@ -30,13 +30,17 @@ CG_API_KEY = os.getenv('CG_API_KEY', 'CG-xA5NyokGEVbc4bwrvJPcpZvT')
 HELIUS_API_KEY = os.getenv('HELIUS_API_KEY', '70ed65ce-4750-4fd5-83bd-5aee9aa79ead')
 HELIUS_RPC_URL = os.getenv('HELIUS_RPC_URL', 'https://mainnet.helius-rpc.com')
 BITQUERY_API_KEY = os.getenv('BITQUERY_API_KEY', 'ory_at_LmFLzUutMY8EVb-P_PQVP9ntfwUVTV05LMal7xUqb2I.vxFLfMEoLGcu4XoVi47j-E2bspraTSrmYzCt1A4y2k')
-NAN_HANDLING = 'mean'
+FEATURES = ['log_return_lag1', 'log_return_lag2', 'log_return_lag3', 'log_return_lag4', 'log_return_lag5', 'log_return_lag6', 'log_return_lag7', 'sign_return', 'sign_return_lag1', 'sign_return_lag2', 'sign_return_lag3', 'sign_return_lag4', 'sign_return_lag5', 'momentum_filter_1', 'momentum_filter_2', 'momentum_filter_3', 'momentum_filter_4', 'sentiment_score']
 LOW_VARIANCE_THRESHOLD = 0.01
+NAN_HANDLING = 'fill_median'
 MODEL_PARAMS = {
-    'max_depth': 5,
-    'num_leaves': 31,
-    'reg_alpha': 0.1,
-    'reg_lambda': 0.1,
-    'n_estimators': 100
+    'objective': 'regression',
+    'metric': 'rmse',
+    'max_depth': 6,
+    'num_leaves': 40,
+    'lambda_l1': 0.1,
+    'lambda_l2': 0.1,
+    'learning_rate': 0.01,
+    'n_estimators': 1000
 }
-FEATURES = ['log_return_lag1', 'log_return_lag2', 'log_return_lag3', 'log_return_lag4', 'log_return_lag5', 'log_return_lag6', 'log_return_lag7', 'sign_return', 'sign_return_lag1', 'sign_return_lag2', 'sign_return_lag3', 'sign_return_lag4', 'sign_return_lag5', 'momentum_filter_1', 'momentum_filter_2', 'momentum_filter_3', 'momentum_filter_4', 'momentum_filter_5', 'sentiment_score']
+OPTUNA_TRIALS = 50
