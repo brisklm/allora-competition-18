@@ -34,17 +34,19 @@ HELIUS_RPC_URL = os.getenv('HELIUS_RPC_URL', 'https://mainnet.helius-rpc.com')
 BITQUERY_API_KEY = os.getenv('BITQUERY_API_KEY', 'ory_at_LmFLzUutMY8EVb-P_PQVP9ntfwUVTV05LMal7xUqb2I.vxFLfMEoLGcu4XoVi47j-E2bspraTSrmYzCt1A4y2k')
 # Feature set adapted to BTC/USD 8h log-return prediction (Competition 18)
 # Keep only features that our pipeline can handle
-FEATURES = [
-    'log_return_lag1', 'log_return_lag2', 'log_return_lag3',
-    'momentum_5', 'momentum_10', 'sign_return',
-    'vader_sentiment', 'rsi_14', 'macd', 'volume_change',
-    'sol_volume', 'eth_gas_price'
-]
-# For improved R2, directional accuracy, correlation
-MAX_DEPTH = 5  # Adjusted for model
-NUM_LEAVES = 31  # Adjusted
-L2_REG = 0.001  # Added regularization
-OPTUNA_TRIALS = 100  # Increased for better tuning
-# Robust NaN handling and low-variance checks
-FILL_METHOD = 'ffill'
-MIN_VARIANCE = 1e-6
+# Engineered features: sign/log-return lags and momentum filters
+FEATURES = ['log_return_lag1', 'log_return_lag2', 'log_return_lag3', 'log_return_lag8', 'sign_lag1', 'momentum_5', 'momentum_10', 'vader_sentiment_score', 'volume', 'rsi_14', 'macd']
+# Optimization targets
+TARGET_R2 = 0.1
+TARGET_DIR_ACC = 0.6
+TARGET_CORR = 0.25
+# Model parameters for LSTM_Hybrid: adjust layers/units, add regularization, ensembling, smoothing
+NUM_LAYERS = 2
+UNITS = 64
+DROPOUT = 0.2
+REGULARIZATION = 0.001
+ENSEMBLE_SIZE = 3
+SMOOTHING_WINDOW = 3
+# Robust handling
+NAN_HANDLING = 'forward_fill'
+LOW_VARIANCE_THRESHOLD = 1e-5
