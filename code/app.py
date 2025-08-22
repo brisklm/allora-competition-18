@@ -54,39 +54,67 @@ MODEL_CACHE = {
     "last_modified": None
 }
 
-def load_model():
-    if MODEL_CACHE["model"] is None or need_reload():
-        MODEL_CACHE["model"] = joblib.load('data/model.pkl')
-        with open('data/selected_features.json', 'r') as f:
-            MODEL_CACHE["selected_features"] = json.load(f)
-        MODEL_CACHE["last_modified"] = datetime.now()
-    return MODEL_CACHE["model"], MODEL_CACHE["selected_features"]
+import config  # Assuming config.py is available
 
-def need_reload():
-    return os.path.getmtime('data/model.pkl') > (MODEL_CACHE["last_modified"].timestamp() if MODEL_CACHE["last_modified"] else 0)
+def load_model():
+    model_path = config.model_file_path
+    features_path = config.selected_features_path
+    current_mod_time = os.path.getmtime(model_path)
+    if MODEL_CACHE["model"] is None or MODEL_CACHE["last_modified"] != current_mod_time:
+        MODEL_CACHE["model"] = joblib.load(model_path)
+        with open(features_path, 'r') as f:
+            MODEL_CACHE["selected_features"] = json.load(f)
+        MODEL_CACHE["last_modified"] = current_mod_time
+    return MODEL_CACHE["model"], MODEL_CACHE["selected_features"]
 
 @app.route('/predict', methods=['POST'])
 def predict():
     data = request.json
     model, features = load_model()
     input_data = np.array([[data.get(f, 0) for f in features]])
-    prediction = model.predict(input_data)[0]
-    # Stabilize via simple smoothing (e.g., ensemble avg if enabled)
-    if os.getenv('ENABLE_ENSEMBLE', 'True') == 'True':
-        prediction = (prediction + np.random.normal(prediction, 0.01)) / 2  # Dummy ensemble smoothing
-    return jsonify({'log_return': float(prediction)})
+    # Robust NaN handling
+    if np.isnan(input_data).any():
+        if config.NAN_HANDLING == 'fillna_median':
+            medians = np.nanmedian(input_data, axis=0)  # Simple median fill
+            input_data = np.nan_to_num(input_data, nan=medians)
+    # Low-variance check (skip prediction if variance low)
+    if np.var(input_data) < config.LOW_VARIANCE_THRESHOLD:
+        return jsonify({"prediction": 0, "warning": "Low variance input"})
+    pred = model.predict(input_data)[0]
+    return jsonify({"prediction": pred})
 
-@app.route('/tool/optimize', methods=['POST'])
-def tool_optimize():
-    # Trigger Optuna with low-variance check
-    try:
-        import optuna
-        # Dummy Optuna study for illustration
-        study = optuna.create_study(direction='maximize')
-        study.optimize(lambda trial: trial.suggest_float('x', -10, 10)**2, n_trials=10)
-        return jsonify({'status': 'optimized', 'best': study.best_value})
-    except:
-        return jsonify({'status': 'error'})
+@app.route('/tools', methods=['GET'])
+def get_tools():
+    return jsonify(TOOLS)
+
+@app.route('/tool/<name>', methods=['POST'])
+def call_tool(name):
+    if name == "optimize":
+        # Trigger Optuna optimization (assume optimize.py exists)
+        result = subprocess.run(["python", "optimize.py"], capture_output=True, text=True)
+        return jsonify({"status": "optimized", "output": result.stdout})
+    elif name == "write_code":
+        params = request.json
+        title = params["title"]
+        content = params["content"]
+        # Simple syntax validation (e.g., try compile)
+        try:
+            compile(content, title, 'exec')
+        except SyntaxError as e:
+            return jsonify({"error": str(e)})
+        with open(title, "w") as f:
+            f.write(content)
+        return jsonify({"status": "written"})
+    elif name == "commit_to_github":
+        params = request.json
+        message = params["message"]
+        files = params.get("files", [])
+        for file in files:
+            subprocess.run(["git", "add", file])
+        subprocess.run(["git", "commit", "-m", message])
+        subprocess.run(["git", "push"])
+        return jsonify({"status": "committed"})
+    return Response(status=404)
 
 if __name__ == '__main__':
     app.run(port=FLASK_PORT)
