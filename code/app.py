@@ -4,6 +4,8 @@ from datetime import datetime
 from flask import Flask, request, Response, jsonify
 from dotenv import load_dotenv
 import numpy as np
+from config import FEATURES, OPTUNA_TRIALS, MODEL_PARAMS, ENABLE_ENSEMBLE, NAN_HANDLING, LOW_VARIANCE_THRESHOLD
+from model import train_model, predict
 
 # Initialize app and env
 app = Flask(__name__)
@@ -53,5 +55,25 @@ MODEL_CACHE = {
     "last_update": None
 }
 
-if __name__ == "__main__":
-    app.run(port=FLASK_PORT, debug=True)
+@app.route('/predict', methods=['POST'])
+def predict_endpoint():
+    try:
+        data = request.json
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+
+        prediction = predict(data)
+        return jsonify({"prediction": prediction.tolist()})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/optimize', methods=['POST'])
+def optimize_endpoint():
+    try:
+        result = train_model(optimize=True)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=FLASK_PORT)
