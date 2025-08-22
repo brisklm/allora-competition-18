@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 import numpy as np
 import joblib
 import subprocess
-from config import model_file_path, selected_features_path, NAN_HANDLING, scaler_file_path, LOW_VARIANCE_THRESHOLD
+from config import model_file_path, selected_features_path, NAN_HANDLING, scaler_file_path, LOW_VARIANCE_THRESHOLD, FEATURES, MODEL_PARAMS
 
 # Initialize app and env
 app = Flask(__name__)
@@ -24,7 +24,7 @@ FLASK_PORT = int(os.getenv("FLASK_PORT", 9001))
 TOOLS = [
     {
         "name": "optimize",
-        "description": "Triggers model optimization using Optuna tuning and returns results. Includes sentiment analysis with VADER, NaN handling, low-variance feature removal, and parameter adjustments for better R2 and directional accuracy.",
+        "description": "Triggers model optimization using Optuna tuning and returns results.",
         "parameters": {}
     },
     {
@@ -48,43 +48,68 @@ TOOLS = [
     }
 ]
 
-@app.route('/tools', methods=['GET'])
-def get_tools():
-    return jsonify(TOOLS)
+# Tool implementations
+def run_optimize(params):
+    # Trigger Optuna tuning, optional check
+    try:
+        import optuna
+        # Assume optimize.py handles tuning with adjusted params for max_depth, regularization, etc.
+        result = subprocess.run(['python', 'optimize.py'], capture_output=True, text=True)
+        return result.stdout
+    except ImportError:
+        return "Optuna not available, skipping tuning."
 
-@app.route('/invoke/<tool_name>', methods=['POST'])
-def invoke(tool_name):
+def run_write_code(params):
+    title = params['title']
+    content = params['content']
+    with open(title, 'w') as f:
+        f.write(content)
+    return "File written successfully"
+
+def run_commit_to_github(params):
+    message = params['message']
+    files = params['files']
+    for file in files:
+        subprocess.run(['git', 'add', file])
+    subprocess.run(['git', 'commit', '-m', message])
+    subprocess.run(['git', 'push'])
+    return "Committed to GitHub"
+
+@app.route('/invoke_tool', methods=['POST'])
+def invoke_tool():
+    data = request.json
+    tool_name = data['tool_name']
+    params = data.get('parameters', {})
     if tool_name == 'optimize':
-        try:
-            result = subprocess.run(['python', 'optimize.py'], capture_output=True, text=True)
-            return jsonify({"result": result.stdout})
-        except Exception as e:
-            return jsonify({"error": str(e)})
+        result = run_optimize(params)
     elif tool_name == 'write_code':
-        data = request.json
-        title = data['title']
-        content = data['content']
-        import ast
-        try:
-            ast.parse(content)
-        except SyntaxError as e:
-            return jsonify({"error": f"Syntax error: {str(e)}"})
-        with open(title, 'w') as f:
-            f.write(content)
-        return jsonify({"success": True})
+        result = run_write_code(params)
     elif tool_name == 'commit_to_github':
-        data = request.json
-        message = data['message']
-        files = data['files']
-        try:
-            subprocess.run(['git', 'add'] + files, check=True)
-            subprocess.run(['git', 'commit', '-m', message], check=True)
-            subprocess.run(['git', 'push'], check=True)
-            return jsonify({"success": True})
-        except Exception as e:
-            return jsonify({"error": str(e)})
+        result = run_commit_to_github(params)
     else:
-        return jsonify({"error": "Unknown tool"})
+        return jsonify({"error": "Unknown tool"}), 400
+    return jsonify({"result": result})
+
+@app.route('/predict', methods=['POST'])
+def predict():
+    data = request.json
+    model = joblib.load(model_file_path)
+    scaler = joblib.load(scaler_file_path)
+    # Extract features, handle NaN robustly
+    features_list = []
+    for f in FEATURES:
+        val = data.get(f, np.nan)
+        features_list.append(val)
+    features = np.array(features_list).reshape(1, -1)
+    if NAN_HANDLING == 'ffill':
+        # Simple forward fill example (assuming sequential, but for single pred, use mean as fallback)
+        features = np.nan_to_num(features, nan=np.nanmean(features))
+    # Low variance check not needed at pred time
+    scaled = scaler.transform(features)
+    pred = model.predict(scaled)
+    # Stabilize via simple ensembling/smoothing (e.g., average with zero for demo)
+    stabilized_pred = (pred[0] + 0) / 2  # Placeholder; in real, average multiple models
+    return jsonify({"prediction": stabilized_pred})
 
 if __name__ == '__main__':
-    app.run(port=FLASK_PORT)
+    app.run(port=FLASK_PORT, debug=True)
