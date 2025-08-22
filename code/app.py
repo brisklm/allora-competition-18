@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 import numpy as np
 import joblib
 import subprocess
-import config
+import ast
 
 # Initialize app and env
 app = Flask(__name__)
@@ -56,37 +56,59 @@ MODEL_CACHE = {
 }
 
 def load_model():
-    if MODEL_CACHE["model"] is None or (datetime.now() - MODEL_CACHE["last_modified"]).days > 0:
-        MODEL_CACHE["model"] = joblib.load(config.model_file_path)
-        with open(config.selected_features_path, 'r') as f:
-            MODEL_CACHE["selected_features"] = json.load(f)
-        MODEL_CACHE["last_modified"] = datetime.now()
+    global MODEL_CACHE
+    model_path = os.path.join('data', 'model.pkl')
+    current_mod = os.path.getmtime(model_path)
+    if MODEL_CACHE['model'] is None or MODEL_CACHE['last_modified'] != current_mod:
+        MODEL_CACHE['model'] = joblib.load(model_path)
+        with open(os.path.join('data', 'selected_features.json'), 'r') as f:
+            MODEL_CACHE['selected_features'] = json.load(f)
+        MODEL_CACHE['last_modified'] = current_mod
 
-def preprocess_input(data):
-    data = np.array(data)
-    if np.var(data) < config.LOW_VARIANCE_THRESHOLD:
-        raise ValueError("Input data has low variance")
-    if np.any(np.isnan(data)):
-        mask = np.isnan(data)
-        idx = np.where(~mask)[0]
-        data[mask] = np.interp(np.flatnonzero(mask), idx, data[~mask])
-    return data
+@app.route('/tools', methods=['GET'])
+def get_tools():
+    return jsonify(TOOLS)
+
+@app.route('/tool/<name>', methods=['POST'])
+def run_tool(name):
+    if name == "optimize":
+        import optimize as opt
+        results = opt.run_optimization()  # Assume optimize.py exists with run_optimization using Optuna
+        return jsonify(results)
+    elif name == "write_code":
+        args = request.json
+        title = args['title']
+        content = args['content']
+        try:
+            ast.parse(content)
+        except SyntaxError as e:
+            return jsonify({"error": str(e)}), 400
+        with open(title, 'w') as f:
+            f.write(content)
+        return jsonify({"status": "success"})
+    elif name == "commit_to_github":
+        args = request.json
+        message = args['message']
+        files = args.get('files', [])
+        for file in files:
+            subprocess.run(["git", "add", file])
+        subprocess.run(["git", "commit", "-m", message])
+        subprocess.run(["git", "push"])
+        return jsonify({"status": "success"})
+    return jsonify({"error": "Tool not found"}), 404
 
 @app.route('/predict', methods=['POST'])
 def predict():
     load_model()
-    input_data = request.json.get('data', [])
-    processed_data = preprocess_input(input_data)
-    prediction = MODEL_CACHE["model"].predict([processed_data])[0]
-    # Simple smoothing example (assuming predictions are in cache or something; for single, pass through)
-    return jsonify({'prediction': prediction})
-
-@app.route('/optimize', methods=['GET'])
-def optimize():
-    # Trigger Optuna optimization (assume tune_model.py exists and uses config.OPTUNA_TRIALS)
-    subprocess.run(['python', 'tune_model.py'])
-    load_model()
-    return jsonify({'status': 'Model optimized', 'version': MCP_VERSION})
+    data = request.json
+    features = [data.get(f, 0) for f in MODEL_CACHE['selected_features']]  # Impute missing with 0
+    input_data = np.array([features])
+    if np.any(np.isnan(input_data)):
+        input_data = np.nan_to_num(input_data)  # Robust NaN handling
+    if np.var(input_data) < 1e-6:
+        return jsonify({"prediction": 0, "warning": "Low variance input"})
+    prediction = MODEL_CACHE['model'].predict(input_data)[0]
+    return jsonify({"prediction": float(prediction)})
 
 if __name__ == '__main__':
-    app.run(port=FLASK_PORT)
+    app.run(port=FLASK_PORT, host='0.0.0.0')
