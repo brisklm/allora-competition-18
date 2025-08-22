@@ -6,14 +6,7 @@ from dotenv import load_dotenv
 import numpy as np
 import joblib
 import subprocess
-from config import model_file_path, selected_features_path, NAN_HANDLING, FEATURES, OPTUNA_TRIALS, MODEL_PARAMS, LOW_VARIANCE_THRESHOLD
-import pandas as pd
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import r2_score
-from sklearn.feature_selection import VarianceThreshold
-import lightgbm as lgb
-import optuna
-import ast
+from config import model_file_path, selected_features_path, NAN_HANDLING, scaler_file_path, LOW_VARIANCE_THRESHOLD
 
 # Initialize app and env
 app = Flask(__name__)
@@ -56,91 +49,71 @@ TOOLS = [
 ]
 
 # In-memory cache for inference
-MODEL_CACHE = {}
-
+MODEL = None
+SCALER = None
+SELECTED_FEATURES = []
 def load_model():
-    if os.path.exists(model_file_path):
-        MODEL_CACHE['model'] = joblib.load(model_file_path)
+    global MODEL, SCALER, SELECTED_FEATURES
+    try:
+        MODEL = joblib.load(model_file_path)
+        SCALER = joblib.load(scaler_file_path)
+        with open(selected_features_path, 'r') as f:
+            SELECTED_FEATURES = json.load(f)
+    except Exception as e:
+        print(f"Error loading model: {e}")
+load_model()
+
+@app.route('/predict', methods=['POST'])
+def predict():
+    data = request.json
+    for key in data:
+        if np.isnan(data[key]):
+            if NAN_HANDLING == 'ffill':
+                data[key] = 0
+    features_array = np.array([data.get(f, 0) for f in SELECTED_FEATURES])
+    if np.var(features_array) < LOW_VARIANCE_THRESHOLD:
+        return jsonify({'prediction': 0.0})
+    scaled = SCALER.transform(features_array.reshape(1, -1))
+    pred = MODEL.predict(scaled)[0]
+    return jsonify({'prediction': pred})
 
 @app.route('/tools', methods=['GET'])
 def get_tools():
     return jsonify(TOOLS)
 
-@app.route('/invoke/<tool_name>', methods=['POST'])
-def invoke_tool(tool_name):
+@app.route('/call_tool', methods=['POST'])
+def call_tool():
+    req = request.json
+    tool_name = req['name']
+    params = req.get('parameters', {})
     if tool_name == 'optimize':
-        result = run_optuna_optimization()
-        return jsonify(result)
-    elif tool_name == 'write_code':
-        data = request.json
-        title = data['title']
-        content = data['content']
         try:
-            ast.parse(content)
+            result = subprocess.run(['python', 'optimize.py'], capture_output=True, text=True)
+            return jsonify({'result': result.stdout})
+        except Exception as e:
+            return jsonify({'error': str(e)})
+    elif tool_name == 'write_code':
+        title = params['title']
+        content = params['content']
+        try:
+            compile(content, title, 'exec')
         except SyntaxError as e:
-            return jsonify({'error': str(e)}), 400
+            return jsonify({'error': f"Syntax error: {e}"})
         with open(title, 'w') as f:
             f.write(content)
         return jsonify({'success': True})
     elif tool_name == 'commit_to_github':
-        data = request.json
-        message = data['message']
-        files = data.get('files', [])
-        for file in files:
-            subprocess.run(['git', 'add', file])
-        subprocess.run(['git', 'commit', '-m', message])
-        subprocess.run(['git', 'push'])
-        return jsonify({'success': True})
+        message = params['message']
+        files = params.get('files', [])
+        try:
+            subprocess.run(['git', 'add'] + files, check=True)
+            subprocess.run(['git', 'commit', '-m', message], check=True)
+            subprocess.run(['git', 'push'], check=True)
+            return jsonify({'success': True})
+        except Exception as e:
+            return jsonify({'error': str(e)})
     else:
-        return jsonify({'error': 'Unknown tool'}), 404
-
-def run_optuna_optimization():
-    df = pd.read_csv('data/price_data.csv')  # Assume path
-    df = df.fillna(method=NAN_HANDLING)
-    X = df[FEATURES]
-    y = df['log_return']
-    corrs = X.corrwith(y).abs()
-    selected = corrs[corrs > 0.25].index.tolist()
-    X = X[selected]
-    selector = VarianceThreshold(threshold=LOW_VARIANCE_THRESHOLD)
-    X = selector.fit_transform(X)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
-    def objective(trial):
-        params = {
-            'objective': 'regression',
-            'metric': 'rmse',
-            'verbose': -1,
-            'max_depth': trial.suggest_int('max_depth', 3, 10),
-            'num_leaves': trial.suggest_int('num_leaves', 10, 50),
-            'learning_rate': trial.suggest_float('learning_rate', 0.001, 0.1),
-            'n_estimators': trial.suggest_int('n_estimators', 100, 2000),
-            'reg_alpha': trial.suggest_float('reg_alpha', 0.0, 1.0),
-            'reg_lambda': trial.suggest_float('reg_lambda', 0.0, 1.0),
-        }
-        model = lgb.LGBMRegressor(**params)
-        model.fit(X_train, y_train)
-        preds = model.predict(X_test)
-        return r2_score(y_test, preds)
-    study = optuna.create_study(direction='maximize')
-    study.optimize(objective, n_trials=OPTUNA_TRIALS)
-    best_params = study.best_params
-    best_model = lgb.LGBMRegressor(**best_params)
-    best_model.fit(X, y)
-    joblib.dump(best_model, model_file_path)
-    with open(selected_features_path, 'w') as f:
-        json.dump(selected, f)
-    return {'best_r2': study.best_value, 'best_params': best_params}
-
-@app.route('/predict', methods=['POST'])
-def predict():
-    load_model()
-    data = request.json
-    features = pd.DataFrame({f: [data.get(f, np.nan)] for f in FEATURES})
-    features = features.fillna(method=NAN_HANDLING)
-    features = np.nan_to_num(features.values)
-    model = MODEL_CACHE['model']
-    pred = model.predict(features)[0]
-    return jsonify({'prediction': pred})
+        return jsonify({'error': 'Unknown tool'})
 
 if __name__ == '__main__':
-    app.run(port=FLASK_PORT)
+    app.run(port=FLASK_PORT, debug=True)
