@@ -54,15 +54,13 @@ MODEL_CACHE = {
     "last_modified": None
 }
 
-import config  # Assuming config.py is available
-
 def load_model():
-    model_path = config.model_file_path
-    features_path = config.selected_features_path
-    current_mod_time = os.path.getmtime(model_path)
+    global MODEL_CACHE
+    from config import model_file_path, selected_features_path
+    current_mod_time = os.path.getmtime(model_file_path)
     if MODEL_CACHE["model"] is None or MODEL_CACHE["last_modified"] != current_mod_time:
-        MODEL_CACHE["model"] = joblib.load(model_path)
-        with open(features_path, 'r') as f:
+        MODEL_CACHE["model"] = joblib.load(model_file_path)
+        with open(selected_features_path, 'r') as f:
             MODEL_CACHE["selected_features"] = json.load(f)
         MODEL_CACHE["last_modified"] = current_mod_time
     return MODEL_CACHE["model"], MODEL_CACHE["selected_features"]
@@ -71,50 +69,48 @@ def load_model():
 def predict():
     data = request.json
     model, features = load_model()
-    input_data = np.array([[data.get(f, 0) for f in features]])
-    # Robust NaN handling
+    input_list = [data.get(f, 0) for f in features]
+    input_data = np.array(input_list).reshape(1, -1)
     if np.isnan(input_data).any():
-        if config.NAN_HANDLING == 'fillna_median':
-            medians = np.nanmedian(input_data, axis=0)  # Simple median fill
-            input_data = np.nan_to_num(input_data, nan=medians)
-    # Low-variance check (skip prediction if variance low)
-    if np.var(input_data) < config.LOW_VARIANCE_THRESHOLD:
-        return jsonify({"prediction": 0, "warning": "Low variance input"})
-    pred = model.predict(input_data)[0]
-    return jsonify({"prediction": pred})
-
-@app.route('/tools', methods=['GET'])
-def get_tools():
-    return jsonify(TOOLS)
+        input_data = np.nan_to_num(input_data, nan=0)
+    prediction = model.predict(input_data)[0]
+    return jsonify({"prediction": prediction})
 
 @app.route('/tool/<name>', methods=['POST'])
 def call_tool(name):
+    data = request.json
     if name == "optimize":
-        # Trigger Optuna optimization (assume optimize.py exists)
-        result = subprocess.run(["python", "optimize.py"], capture_output=True, text=True)
-        return jsonify({"status": "optimized", "output": result.stdout})
-    elif name == "write_code":
-        params = request.json
-        title = params["title"]
-        content = params["content"]
-        # Simple syntax validation (e.g., try compile)
         try:
-            compile(content, title, 'exec')
-        except SyntaxError as e:
-            return jsonify({"error": str(e)})
-        with open(title, "w") as f:
+            result = subprocess.run(['python', 'optimize.py'], capture_output=True, text=True)
+            return jsonify({"status": "success", "output": result.stdout, "error": result.stderr})
+        except Exception as e:
+            return jsonify({"status": "error", "message": str(e)})
+    elif name == "write_code":
+        title = data['title']
+        content = data['content']
+        if title.endswith('.py'):
+            try:
+                compile(content, title, 'exec')
+            except SyntaxError as e:
+                return jsonify({"status": "error", "message": str(e)})
+        with open(title, 'w') as f:
             f.write(content)
-        return jsonify({"status": "written"})
+        return jsonify({"status": "success"})
     elif name == "commit_to_github":
-        params = request.json
-        message = params["message"]
-        files = params.get("files", [])
-        for file in files:
-            subprocess.run(["git", "add", file])
-        subprocess.run(["git", "commit", "-m", message])
-        subprocess.run(["git", "push"])
-        return jsonify({"status": "committed"})
-    return Response(status=404)
+        message = data['message']
+        files = data.get('files', [])
+        try:
+            if files:
+                subprocess.run(['git', 'add'] + files, check=True)
+            else:
+                subprocess.run(['git', 'add', '.'], check=True)
+            subprocess.run(['git', 'commit', '-m', message], check=True)
+            subprocess.run(['git', 'push'], check=True)
+            return jsonify({"status": "success"})
+        except Exception as e:
+            return jsonify({"status": "error", "message": str(e)})
+    else:
+        return jsonify({"status": "error", "message": "Tool not found"}), 404
 
 if __name__ == '__main__':
-    app.run(port=FLASK_PORT)
+    app.run(port=FLASK_PORT, debug=True)
