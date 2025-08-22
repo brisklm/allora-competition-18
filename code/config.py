@@ -34,27 +34,17 @@ HELIUS_RPC_URL = os.getenv('HELIUS_RPC_URL', 'https://mainnet.helius-rpc.com')
 BITQUERY_API_KEY = os.getenv('BITQUERY_API_KEY', 'ory_at_LmFLzUutMY8EVb-P_PQVP9ntfwUVTV05LMal7xUqb2I.vxFLfMEoLGcu4XoVi47j-E2bspraTSrmYzCt1A4y2k')
 # Feature set adapted to BTC/USD 8h log-return prediction (Competition 18)
 # Keep only features that our pipeline can handle
-# Optimized features for improved R2, directional accuracy, correlation
-FEATURES = ['open', 'high', 'low', 'close', 'volume', 'rsi_14', 'ema_12', 'ema_26', 'macd']
-# Engineered features: sign/log-return lags and momentum filters
-FEATURES += ['log_return', 'log_return_lag1', 'log_return_lag2', 'log_return_lag3', 'momentum_3', 'momentum_5', 'momentum_8']
-# VADER sentiment feature
-if SentimentIntensityAnalyzer:
-    VADER = SentimentIntensityAnalyzer()
-else:
-    VADER = None
-FEATURES += ['vader_compound', 'vader_positive', 'vader_negative']
-# For stabilization: smoothing and ensembling
-SMOOTHING_WINDOW = 3
-ENSEMBLE_METHOD = 'average'
-# Hyperparams adjustment for max_depth/num_leaves and regularization
-HYPERPARAMS = {
-    'max_depth': 6,
-    'num_leaves': 25,
-    'reg_alpha': 0.05,
-    'reg_lambda': 0.05,
-    'optuna_trials': 100
-}
+FEATURES = [
+    'log_return_lag1', 'log_return_lag2', 'log_return_lag3',
+    'momentum_5', 'momentum_10', 'sign_return',
+    'vader_sentiment', 'rsi_14', 'macd', 'volume_change',
+    'sol_volume', 'eth_gas_price'
+]
+# For improved R2, directional accuracy, correlation
+MAX_DEPTH = 5  # Adjusted for model
+NUM_LEAVES = 31  # Adjusted
+L2_REG = 0.001  # Added regularization
+OPTUNA_TRIALS = 100  # Increased for better tuning
 # Robust NaN handling and low-variance checks
-NAN_STRATEGY = 'ffill'  # forward fill
-LOW_VARIANCE_THRESHOLD = 0.001
+FILL_METHOD = 'ffill'
+MIN_VARIANCE = 1e-6
