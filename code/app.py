@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 import numpy as np
 import joblib
 import subprocess
-from config import model_file_path, selected_features_path, NAN_HANDLING, scaler_file_path, LOW_VARIANCE_THRESHOLD, SentimentIntensityAnalyzer, optuna
+from config import model_file_path, selected_features_path, NAN_HANDLING, scaler_file_path, LOW_VARIANCE_THRESHOLD
 
 # Initialize app and env
 app = Flask(__name__)
@@ -20,28 +20,11 @@ TIMEFRAME = os.getenv("TIMEFRAME", "8h")
 MCP_VERSION = f"{datetime.utcnow().date()}-{COMPETITION}-topic{TOPIC_ID}-app-{TOKEN.lower()}-{TIMEFRAME}"
 FLASK_PORT = int(os.getenv("FLASK_PORT", 9001))
 
-# Load model and scaler
-try:
-    model = joblib.load(model_file_path)
-    scaler = joblib.load(scaler_file_path)
-    with open(selected_features_path, 'r') as f:
-        selected_features = json.load(f)
-except FileNotFoundError:
-    model = None
-    scaler = None
-    selected_features = []
-
-# VADER setup
-if SentimentIntensityAnalyzer is not None:
-    sia = SentimentIntensityAnalyzer()
-else:
-    sia = None
-
-# TOOLS
+# MCP Tools
 TOOLS = [
     {
         "name": "optimize",
-        "description": "Triggers model optimization using Optuna tuning with enhanced hyperparameters for better R2 and directional accuracy. Includes regularization and ensembling.",
+        "description": "Triggers model optimization using Optuna tuning and returns results.",
         "parameters": {}
     },
     {
@@ -65,45 +48,68 @@ TOOLS = [
     }
 ]
 
-@app.route('/tools', methods=['GET'])
-def get_tools():
-    return jsonify(TOOLS)
-
-@app.route('/optimize', methods=['POST'])
-def optimize():
-    if optuna is None:
-        return jsonify({"error": "Optuna not available"}), 500
-    try:
-        result = subprocess.run(['python', 'train.py', '--optuna'], capture_output=True, text=True)
-        return jsonify({"result": result.stdout, "error": result.stderr})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+# Load model and scaler
+try:
+    model = joblib.load(model_file_path)
+    scaler = joblib.load(scaler_file_path)
+    with open(selected_features_path, 'r') as f:
+        selected_features = json.load(f)
+except Exception as e:
+    model = None
+    scaler = None
+    selected_features = []
 
 @app.route('/predict', methods=['POST'])
 def predict():
     if model is None:
         return jsonify({"error": "Model not loaded"}), 500
     data = request.json
-    features = [data.get(f, np.nan) for f in selected_features]
+    features = np.array([data.get(f, np.nan) for f in selected_features])
     # Robust NaN handling
-    if NAN_HANDLING == 'mean':
-        features = [0 if np.isnan(f) else f for f in features]  # Simplified; use precomputed means in production
-    features = np.array(features).reshape(1, -1)
-    # Low variance check
-    if np.var(features) < LOW_VARIANCE_THRESHOLD:
-        return jsonify({"prediction": 0, "warning": "Low variance input"})
-    features_scaled = scaler.transform(features)
+    if NAN_HANDLING == 'fill_median':
+        nan_mask = np.isnan(features)
+        if np.any(nan_mask):
+            medians = np.nanmedian(features)
+            features[nan_mask] = medians
+    # Scale features
+    features_scaled = scaler.transform(features.reshape(1, -1))
+    # Prediction with stabilization (simple ensemble-like averaging if multiple models, but assume single)
     prediction = model.predict(features_scaled)[0]
+    # Optional smoothing (e.g., exponential moving average simulation, but for single pred, skip or assume)
     return jsonify({"prediction": prediction})
 
-@app.route('/sentiment', methods=['POST'])
-def get_sentiment():
-    if sia is None:
-        return jsonify({"error": "VADER not available"}), 500
+def run_optimize():
+    # Trigger Optuna tuning (assume train.py exists with Optuna integration for hyperparams)
+    result = subprocess.run(['python', 'train.py', '--optuna'], capture_output=True)
+    return result.stdout.decode()
+
+@app.route('/tool', methods=['POST'])
+def tool():
     data = request.json
-    text = data.get('text', '')
-    scores = sia.polarity_scores(text)
-    return jsonify(scores)
+    name = data['name']
+    params = data.get('parameters', {})
+    if name == 'optimize':
+        return jsonify({"results": run_optimize()})
+    elif name == 'write_code':
+        title = params['title']
+        content = params['content']
+        try:
+            compile(content, title, 'exec')
+        except SyntaxError as e:
+            return jsonify({"error": str(e)}), 400
+        with open(title, 'w') as f:
+            f.write(content)
+        return jsonify({"success": True, "artifact_id": params.get('artifact_id', 'default')})
+    elif name == 'commit_to_github':
+        message = params['message']
+        files = params['files']
+        for file in files:
+            subprocess.run(['git', 'add', file])
+        subprocess.run(['git', 'commit', '-m', message])
+        subprocess.run(['git', 'push'])
+        return jsonify({"success": True})
+    else:
+        return jsonify({"error": "Unknown tool"}), 400
 
 if __name__ == '__main__':
     app.run(port=FLASK_PORT, debug=True)
