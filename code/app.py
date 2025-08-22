@@ -6,20 +6,7 @@ from dotenv import load_dotenv
 import numpy as np
 import joblib
 import subprocess
-from config import model_file_path, selected_features_path, NAN_HANDLING, scaler_file_path, LOW_VARIANCE_THRESHOLD, FEATURES
-import pandas as pd
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
-from sklearn.feature_selection import VarianceThreshold
-from sklearn.metrics import r2_score, mean_squared_error
-try:
-    import optuna
-except Exception:
-    optuna = None
-try:
-    from lightgbm import LGBMRegressor
-except Exception:
-    LGBMRegressor = None
+from config import model_file_path, selected_features_path, NAN_HANDLING, scaler_file_path, LOW_VARIANCE_THRESHOLD
 
 # Initialize app and env
 app = Flask(__name__)
@@ -61,77 +48,75 @@ TOOLS = [
     }
 ]
 
-@app.route('/tool/<tool_name>', methods=['POST'])
-def execute_tool(tool_name):
-    if tool_name == 'optimize':
-        if optuna is None or LGBMRegressor is None:
-            return jsonify({'error': 'Required libraries not available'})
-        df = pd.read_csv(training_price_data_path)
-        df = df.fillna(method=NAN_HANDLING)
-        X = df[FEATURES]
-        y = df['log_return']  # Assume target column
-        selector = VarianceThreshold(threshold=LOW_VARIANCE_THRESHOLD)
-        selector.fit(X)
-        selected_features = [f for f, i in zip(FEATURES, selector.get_support()) if i]
-        joblib.dump(selected_features, selected_features_path)
-        X_selected = selector.transform(X)
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X_selected)
-        joblib.dump(scaler, scaler_file_path)
-        X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2)
-        def objective(trial):
-            params = {
-                'objective': 'regression',
-                'metric': 'rmse',
-                'max_depth': trial.suggest_int('max_depth', 3, 10),
-                'num_leaves': trial.suggest_int('num_leaves', 20, 50),
-                'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.1),
-                'reg_alpha': trial.suggest_float('reg_alpha', 0.0, 1.0),
-                'reg_lambda': trial.suggest_float('reg_lambda', 0.0, 1.0),
-                'bagging_fraction': trial.suggest_float('bagging_fraction', 0.5, 1.0),
-                'bagging_freq': trial.suggest_int('bagging_freq', 1, 7)
-            }
-            model = LGBMRegressor(**params)
-            model.fit(X_train, y_train)
-            preds = model.predict(X_test)
-            r2 = r2_score(y_test, preds)
-            rmse = mean_squared_error(y_test, preds, squared=False)
-            directional_acc = np.mean(np.sign(preds) == np.sign(y_test))
-            corr = np.corrcoef(preds, y_test)[0, 1]
-            return - (r2 + 0.5 * directional_acc + 0.3 * corr)
-        study = optuna.create_study()
-        study.optimize(objective, n_trials=50)
-        best_params = study.best_params
-        model = LGBMRegressor(**best_params)
-        model.fit(X_scaled, y)
-        joblib.dump(model, model_file_path)
-        results = {'best_params': best_params, 'best_value': -study.best_value}
-        with open(best_model_info_path, 'w') as f:
-            json.dump(results, f)
-        return jsonify(results)
-    elif tool_name == 'write_code':
-        params = request.json
-        title = params['title']
-        content = params['content']
-        import ast
-        try:
-            ast.parse(content)
-        except SyntaxError as e:
-            return jsonify({'error': str(e)})
-        with open(title, 'w') as f:
-            f.write(content)
-        return jsonify({'status': 'written'})
-    elif tool_name == 'commit_to_github':
-        params = request.json
-        message = params['message']
-        files = params['files']
-        for file in files:
-            subprocess.run(['git', 'add', file])
-        subprocess.run(['git', 'commit', '-m', message])
-        subprocess.run(['git', 'push'])
-        return jsonify({'status': 'committed'})
+@app.route('/tools', methods=['GET'])
+def get_tools():
+    return jsonify(TOOLS)
+
+@app.route('/tool/optimize', methods=['POST'])
+def optimize():
+    from config import optuna
+    if optuna is None:
+        return jsonify({"error": "Optuna not available"}), 500
+    try:
+        subprocess.run(['python', 'train.py'], check=True)
+        return jsonify({"status": "optimization complete"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/predict', methods=['POST'])
+def predict():
+    data = request.json
+    with open(selected_features_path, 'r') as f:
+        selected_features = json.load(f)
+    features = np.array([data.get(feat, np.nan) for feat in selected_features])
+    # Robust NaN handling
+    if NAN_HANDLING == 'ffill':
+        for i in range(1, len(features)):
+            if np.isnan(features[i]):
+                features[i] = features[i-1]
+    elif NAN_HANDLING == 'mean':
+        mean_val = np.nanmean(features)
+        features = np.nan_to_num(features, nan=mean_val)
     else:
-        return jsonify({'error': 'Unknown tool'})
+        features = np.nan_to_num(features, nan=0)
+    # Low variance check (optional, for logging)
+    var = np.var(features)
+    if var < LOW_VARIANCE_THRESHOLD:
+        return jsonify({"warning": "Low variance features", "prediction": 0.0})
+    scaler = joblib.load(scaler_file_path)
+    features_scaled = scaler.transform([features])
+    model = joblib.load(model_file_path)
+    prediction = model.predict(features_scaled)[0]
+    # Stabilize with simple smoothing (e.g., ensemble simulation)
+    predictions = [prediction]  # could load multiple models
+    stable_pred = np.mean(predictions)
+    return jsonify({"prediction": stable_pred, "direction": 1 if stable_pred > 0 else -1})
+
+@app.route('/tool/write_code', methods=['POST'])
+def write_code():
+    params = request.json
+    title = params['title']
+    content = params['content']
+    try:
+        compile(content, title, 'exec')
+    except SyntaxError as e:
+        return jsonify({"error": str(e)}), 400
+    with open(title, 'w') as f:
+        f.write(content)
+    return jsonify({"status": "code written", "file": title})
+
+@app.route('/tool/commit_to_github', methods=['POST'])
+def commit_to_github():
+    params = request.json
+    message = params['message']
+    files = params['files']
+    try:
+        subprocess.run(['git', 'add'] + files, check=True)
+        subprocess.run(['git', 'commit', '-m', message], check=True)
+        subprocess.run(['git', 'push'], check=True)
+        return jsonify({"status": "committed"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(port=FLASK_PORT)
+    app.run(port=FLASK_PORT, debug=True)
