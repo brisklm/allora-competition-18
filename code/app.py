@@ -48,89 +48,71 @@ TOOLS = [
     }
 ]
 
-# Load model, scaler, and features
-model = joblib.load(model_file_path)
-scaler = joblib.load(scaler_file_path)
-with open(selected_features_path, 'r') as f:
-    selected_features = json.load(f)
+@app.route('/')
+def home():
+    return f"MCP Version: {MCP_VERSION}"
 
-# Optional Optuna import for tuning
-try:
-    import optuna
-except ImportError:
-    optuna = None
+@app.route('/tools', methods=['GET'])
+def get_tools():
+    return jsonify(TOOLS)
 
-# VADER Sentiment Analyzer
-try:
-    from nltk.sentiment.vader import SentimentIntensityAnalyzer
-    sia = SentimentIntensityAnalyzer()
-except ImportError:
-    sia = None
+@app.route('/optimize', methods=['POST'])
+def trigger_optimize():
+    try:
+        result = subprocess.run(['python', 'optimize.py'], capture_output=True, text=True)
+        return jsonify({"status": "success", "output": result.stdout, "error": result.stderr})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)})
 
-def preprocess_data(data):
-    # Robust NaN handling
-    for key in data:
-        if np.isnan(data[key]):
-            if NAN_HANDLING == 'mean':
-                data[key] = np.nanmean([data.get(f, np.nan) for f in selected_features if f != key])
-            elif NAN_HANDLING == 'zero':
-                data[key] = 0
-            else:
-                data[key] = 0  # Default to zero
-    # Low-variance check (filter features with variance below threshold)
-    features_array = np.array([data[f] for f in selected_features])
-    variances = np.var(features_array)
-    if variances < LOW_VARIANCE_THRESHOLD:
-        return None  # Skip prediction if low variance
-    # Scale data
-    scaled_data = scaler.transform([features_array])
-    return scaled_data
+@app.route('/write_code', methods=['POST'])
+def write_code():
+    data = request.json
+    title = data.get('title')
+    content = data.get('content')
+    if not title or not content:
+        return jsonify({"status": "error", "message": "Missing title or content"})
+    try:
+        if title.endswith('.py'):
+            compile(content, title, 'exec')
+        with open(title, 'w') as f:
+            f.write(content)
+        return jsonify({"status": "success", "message": f"File {title} written"})
+    except SyntaxError as e:
+        return jsonify({"status": "error", "message": f"Syntax error: {str(e)}"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)})
 
-def add_sentiment_features(data):
-    if sia:
-        # Example: Assume 'news_text' is part of input data
-        news_text = data.get('news_text', '')
-        sentiment = sia.polarity_scores(news_text)
-        data['vader_compound'] = sentiment['compound']
-        data['vader_pos'] = sentiment['pos']
-        data['vader_neg'] = sentiment['neg']
-    return data
-
-def stabilize_prediction(prediction):
-    # Simple ensembling/smoothing (e.g., average with previous predictions; placeholder)
-    # For now, return as is; can expand with historical averaging
-    return prediction
+@app.route('/commit_to_github', methods=['POST'])
+def commit_to_github():
+    data = request.json
+    message = data.get('message')
+    files = data.get('files')
+    if not message or not files:
+        return jsonify({"status": "error", "message": "Missing message or files"})
+    try:
+        subprocess.run(['git', 'add'] + files, check=True)
+        subprocess.run(['git', 'commit', '-m', message], check=True)
+        subprocess.run(['git', 'push'], check=True)
+        return jsonify({"status": "success", "message": "Committed and pushed"})
+    except Exception as e:
+        return jupytext({"status": "error", "message": str(e)})
 
 @app.route('/predict', methods=['POST'])
 def predict():
     data = request.json
-    data = add_sentiment_features(data)  # Add VADER sentiment
-    preprocessed = preprocess_data(data)
-    if preprocessed is None:
-        return jsonify({'error': 'Low variance data'}), 400
-    prediction = model.predict(preprocessed)[0]
-    stabilized_pred = stabilize_prediction(prediction)
-    return jsonify({'prediction': stabilized_pred})
-
-@app.route('/optimize', methods=['POST'])
-def optimize():
-    if not optuna:
-        return jsonify({'error': 'Optuna not available'}), 400
-    # Placeholder for Optuna tuning logic
-    # Example: Tune hyperparameters for LightGBM to improve R2, directional accuracy
-    def objective(trial):
-        params = {
-            'max_depth': trial.suggest_int('max_depth', 3, 10),
-            'num_leaves': trial.suggest_int('num_leaves', 20, 50),
-            'reg_alpha': trial.suggest_float('reg_alpha', 0.0, 1.0),
-            'reg_lambda': trial.suggest_float('reg_lambda', 0.0, 1.0)
-        }
-        # Train model with params, evaluate R2/directional accuracy
-        # Assume training logic here; return score to maximize
-        return 0.15  # Placeholder R2 > 0.1
-    study = optuna.create_study(direction='maximize')
-    study.optimize(objective, n_trials=50)
-    return jsonify({'best_params': study.best_params, 'best_value': study.best_value})
+    try:
+        model = joblib.load(model_file_path)
+        scaler = joblib.load(scaler_file_path)
+        with open(selected_features_path, 'r') as f:
+            selected_features = json.load(f)
+        features = np.array([data.get(f, np.nan) for f in selected_features])
+        if NAN_HANDLING == 'mean':
+            features = np.nan_to_num(features, nan=np.nanmean(features))
+        features_scaled = scaler.transform(features.reshape(1, -1))
+        prediction = model.predict(features_scaled)
+        return jsonify({"prediction": prediction[0]})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)})
 
 if __name__ == '__main__':
     app.run(port=FLASK_PORT, debug=True)
