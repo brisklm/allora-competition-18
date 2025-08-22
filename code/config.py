@@ -30,6 +30,19 @@ CG_API_KEY = os.getenv('CG_API_KEY', 'CG-xA5NyokGEVbc4bwrvJPcpZvT')
 HELIUS_API_KEY = os.getenv('HELIUS_API_KEY', '70ed65ce-4750-4fd5-83bd-5aee9aa79ead')
 HELIUS_RPC_URL = os.getenv('HELIUS_RPC_URL', 'https://mainnet.helius-rpc.com')
 BITQUERY_API_KEY = os.getenv('BITQUERY_API_KEY', 'ory_at_LmFLzUutMY8EVb-P_PQVP9ntfwUVTV05LMal7xUqb2I.vxFLfMEoLGcu4XoVi47j-E2bspraTSrmYzCt1A4y2k')
-NAN_HANDLING = os.getenv('NAN_HANDLING', 'mean')
-LOW_VARIANCE_THRESHOLD = float(os.getenv('LOW_VARIANCE_THRESHOLD', 0.01))
-FEATURES = ['log_return_lag1', 'log_return_lag2', 'log_return_lag3', 'log_return_lag4', 'log_return_lag5', 'log_return_lag6', 'log_return_lag7', 'log_return_lag8', 'log_return_lag9', 'log_return_lag10', 'sign_return', 'sign_return_lag1', 'sign_return_lag2', 'sign_return_lag3', 'sign_return_lag4', 'sign_return_lag5', 'momentum_filter_1', 'momentum_filter_2', 'momentum_filter_3', 'momentum_filter_4', 'momentum_filter_5', 'vader_sentiment_compound']
+FEATURES = ['log_return_lag1', 'log_return_lag2', 'log_return_lag3', 'log_return_lag4', 'log_return_lag5', 'log_return_lag6', 'log_return_lag7', 'sign_return', 'sign_return_lag1', 'sign_return_lag2', 'sign_return_lag3', 'sign_return_lag4', 'sign_return_lag5', 'momentum_filter_1', 'momentum_filter_2', 'momentum_filter_3', 'momentum_filter_4', 'momentum_filter_5', 'vader_sentiment_compound', 'correlation_feature_1', 'smoothed_log_return']
+NAN_HANDLING = 'fill_median'
+LOW_VARIANCE_THRESHOLD = 0.01
+LGB_PARAMS = {
+    'objective': 'regression',
+    'metric': ['rmse', 'r2'],
+    'max_depth': 5,
+    'num_leaves': 31,
+    'learning_rate': 0.01,
+    'feature_fraction': 0.8,
+    'bagging_fraction': 0.8,
+    'bagging_freq': 5,
+    'reg_alpha': 0.1,
+    'reg_lambda': 0.1,
+    'verbose': -1
+}
