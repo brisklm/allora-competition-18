@@ -32,6 +32,24 @@ HELIUS_RPC_URL = os.getenv('HELIUS_RPC_URL', 'https://mainnet.helius-rpc.com')
 BITQUERY_API_KEY = os.getenv('BITQUERY_API_KEY', 'ory_at_LmFLzUutMY8EVb-P_PQVP9ntfwUVTV05LMal7xUqb2I.vxFLfMEoLGcu4XoVi47j-E2bspraTSrmYzCt1A4y2k')
 FEATURES = ['log_return_lag1', 'log_return_lag2', 'log_return_lag3', 'log_return_lag4', 'log_return_lag5', 'sign_return', 'sign_return_lag1', 'sign_return_lag2', 'sign_return_lag3', 'momentum_filter_1', 'momentum_filter_2', 'momentum_filter_3', 'momentum_filter_4', 'vader_sentiment_compound']
 OPTUNA_TRIALS = 500
-MODEL_PARAMS = {'max_depth': 8, 'num_leaves': 40, 'reg_alpha': 0.2, 'reg_lambda': 0.2, 'n_estimators': 200, 'smoothing_factor': 0.1}
-NAN_HANDLING = 'impute_mean'
-LOW_VARIANCE_THRESHOLD = 0.01
+MODEL_PARAMS = {
+    'LSTM_Hybrid': {
+        'units': 64,
+        'dropout': 0.3,
+        'epochs': 200,
+        'batch_size': 64
+    },
+    'LightGBM': {
+        'objective': 'regression',
+        'metric': 'rmse',
+        'num_leaves': 20,
+        'learning_rate': 0.01,
+        'n_estimators': 200,
+        'max_depth': 5,
+        'reg_alpha': 0.2,
+        'reg_lambda': 0.2
+    }
+}
+NAN_HANDLING = 'ffill'
+ENSEMBLE_MODELS = ['LSTM_Hybrid', 'LightGBM']
+VARIANCE_THRESHOLD = 0.01
