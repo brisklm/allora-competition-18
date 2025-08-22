@@ -33,20 +33,23 @@ HELIUS_API_KEY = os.getenv('HELIUS_API_KEY', '70ed65ce-4750-4fd5-83bd-5aee9aa79e
 HELIUS_RPC_URL = os.getenv('HELIUS_RPC_URL', 'https://mainnet.helius-rpc.com')
 BITQUERY_API_KEY = os.getenv('BITQUERY_API_KEY', 'ory_at_LmFLzUutMY8EVb-P_PQVP9ntfwUVTV05LMal7xUqb2I.vxFLfMEoLGcu4XoVi47j-E2bspraTSrmYzCt1A4y2k')
 # Feature set adapted to BTC/USD 8h log-return prediction (Competition 18)
-# Keep only features that our pipeline can handle
-# Engineered features: sign/log-return lags and momentum filters
-FEATURES = ['log_return_lag1', 'log_return_lag2', 'log_return_lag3', 'log_return_lag8', 'sign_lag1', 'momentum_5', 'momentum_10', 'vader_sentiment_score', 'volume', 'rsi_14', 'macd']
-# Optimization targets
-TARGET_R2 = 0.1
-TARGET_DIR_ACC = 0.6
-TARGET_CORR = 0.25
-# Model parameters for LSTM_Hybrid: adjust layers/units, add regularization, ensembling, smoothing
-NUM_LAYERS = 2
-UNITS = 64
-DROPOUT = 0.2
-REGULARIZATION = 0.001
-ENSEMBLE_SIZE = 3
-SMOOTHING_WINDOW = 3
-# Robust handling
-NAN_HANDLING = 'forward_fill'
-LOW_VARIANCE_THRESHOLD = 1e-5
+# Keep only features that our pipeline can handle without NaNs
+FEATURES = [
+    'open', 'high', 'low', 'close', 'volume',
+    'log_return_lag1', 'log_return_lag2', 'log_return_lag3',
+    'sign_log_return', 'momentum_5', 'momentum_10', 'momentum_20',
+    'vader_compound', 'vader_positive', 'vader_negative'
+]
+# Model parameters for optimization (adjust for R2 > 0.1, directional acc > 0.6)
+MODEL_PARAMS = {
+    'max_depth': 8,
+    'num_leaves': 25,
+    'reg_alpha': 0.1,
+    'reg_lambda': 0.1,
+    'n_estimators': 200,
+    'learning_rate': 0.01
+}
+# Additional settings for robust handling
+NA_HANDLING = 'ffill'
+LOW_VARIANCE_THRESHOLD = 1e-4
+ENSEMBLE_METHOD = 'average'  # for stabilizing predictions
