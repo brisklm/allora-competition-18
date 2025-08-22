@@ -49,71 +49,80 @@ TOOLS = [
 ]
 
 # In-memory cache for inference
-MODEL_CACHE = {
-    "model": None,
-    "selected_features": [],
-    "last_modified": None
-}
-
+MODEL = None
+SCALER = None
+SELECTED_FEATURES = None
 def load_model():
-    mod_time = os.path.getmtime(model_file_path)
-    if MODEL_CACHE["model"] is None or MODEL_CACHE["last_modified"] != mod_time:
-        MODEL_CACHE["model"] = joblib.load(model_file_path)
+    global MODEL, SCALER, SELECTED_FEATURES
+    try:
+        MODEL = joblib.load(model_file_path)
         with open(selected_features_path, 'r') as f:
-            MODEL_CACHE["selected_features"] = json.load(f)
-        MODEL_CACHE["last_modified"] = mod_time
-    return MODEL_CACHE["model"], MODEL_CACHE["selected_features"]
-
-@app.route('/predict', methods=['POST'])
-def predict():
-    data = request.json
-    model, features = load_model()
-    input_data = np.array([data.get(f, np.nan) for f in features]).reshape(1, -1)
-    # Robust NaN handling
-    if np.any(np.isnan(input_data)):
-        if NAN_HANDLING == 'impute_mean':
-            input_data = np.nan_to_num(input_data, nan=np.nanmean(input_data))
-        else:
-            return jsonify({"error": "Input contains NaN values"}), 400
-    # Low-variance check (simple example, can be expanded)
-    if np.var(input_data) < 0.01:
-        return jsonify({"warning": "Low variance input, predictions may be unstable"})
-    prediction = model.predict(input_data)[0]
-    # Stabilize via simple smoothing (example)
-    smoothed_prediction = prediction * 0.9  # Placeholder for smoothing or ensembling
-    return jsonify({"prediction": smoothed_prediction})
+            SELECTED_FEATURES = json.load(f)
+    except Exception as e:
+        print(f"Error loading model: {e}")
+load_model()
 
 @app.route('/tools', methods=['GET'])
 def get_tools():
     return jsonify(TOOLS)
 
-@app.route('/tool/<name>', methods=['POST'])
-def run_tool(name):
-    if name == 'optimize':
-        # Trigger Optuna optimization (assume optimize.py exists)
-        result = subprocess.run(['python', 'optimize.py'], capture_output=True, text=True)
-        return jsonify({"result": result.stdout})
-    elif name == 'write_code':
-        params = request.json
-        title = params['title']
-        content = params['content']
-        # Simple syntax validation (e.g., for Python)
+@app.route('/call_tool', methods=['POST'])
+def call_tool():
+    data = request.json
+    tool_name = data.get('name')
+    params = data.get('parameters', {})
+    if tool_name == 'optimize':
+        return optimize_model(params)
+    elif tool_name == 'write_code':
+        return write_code(params)
+    elif tool_name == 'commit_to_github':
+        return commit_to_github(params)
+    else:
+        return jsonify({"error": "Unknown tool"}), 400
+def optimize_model(params):
+    try:
+        from config import optuna, OPTUNA_TRIALS
+        # Placeholder for Optuna optimization logic
+        study = optuna.create_study(direction='minimize')
+        # Assume objective function defined elsewhere
+        study.optimize(lambda trial: 0.1, n_trials=OPTUNA_TRIALS)  # Dummy
+        return jsonify({"result": study.best_params})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+def write_code(params):
+    title = params.get('title')
+    content = params.get('content')
+    contentType = params.get('contentType', 'text/python')
+    if contentType == 'text/python':
         try:
             compile(content, title, 'exec')
         except SyntaxError as e:
-            return jsonify({"error": str(e)}), 400
-        with open(title, 'w') as f:
-            f.write(content)
-        return jsonify({"status": "File written"})
-    elif name == 'commit_to_github':
-        params = request.json
-        message = params['message']
-        files = params.get('files', [])
-        subprocess.run(['git', 'add'] + files)
-        subprocess.run(['git', 'commit', '-m', message])
-        subprocess.run(['git', 'push'])
-        return jsonify({"status": "Committed"})
-    return jsonify({"error": "Tool not found"}), 404
-
+            return jsonify({"error": f"Syntax error: {e}"}), 400
+    with open(title, 'w') as f:
+        f.write(content)
+    artifact_id = params.get('artifact_id', 'generated')
+    artifact_version_id = params.get('artifact_version_id', 'v1')
+    return jsonify({"success": True, "artifact_id": artifact_id, "artifact_version_id": artifact_version_id})
+def commit_to_github(params):
+    message = params.get('message')
+    files = params.get('files', [])
+    try:
+        subprocess.run(['git', 'add'] + files, check=True)
+        subprocess.run(['git', 'commit', '-m', message], check=True)
+        subprocess.run(['git', 'push'], check=True)
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+@app.route('/predict', methods=['POST'])
+def predict():
+    data = request.json
+    features = np.array([data.get(f, np.nan) for f in SELECTED_FEATURES]).reshape(1, -1)
+    if NAN_HANDLING == 'ffill':
+        features = np.nan_to_num(features, nan=0.0)  # Simple handling
+    try:
+        pred = MODEL.predict(features)[0]
+        return jsonify({"prediction": float(pred)})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 if __name__ == '__main__':
-    app.run(port=FLASK_PORT)
+    app.run(port=FLASK_PORT, debug=True)
