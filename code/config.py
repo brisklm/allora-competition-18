@@ -31,19 +31,8 @@ HELIUS_API_KEY = os.getenv('HELIUS_API_KEY', '70ed65ce-4750-4fd5-83bd-5aee9aa79e
 HELIUS_RPC_URL = os.getenv('HELIUS_RPC_URL', 'https://mainnet.helius-rpc.com')
 BITQUERY_API_KEY = os.getenv('BITQUERY_API_KEY', 'ory_at_LmFLzUutMY8EVb-P_PQVP9ntfwUVTV05LMal7xUqb2I.vxFLfMEoLGcu4XoVi47j-E2bspraTSrmYzCt1A4y2k')
 FEATURES = ['log_return_lag1', 'log_return_lag2', 'log_return_lag3', 'log_return_lag4', 'log_return_lag5', 'log_return_lag6', 'log_return_lag7', 'sign_return', 'sign_return_lag1', 'sign_return_lag2', 'sign_return_lag3', 'sign_return_lag4', 'sign_return_lag5', 'momentum_filter_1', 'momentum_filter_2', 'momentum_filter_3', 'momentum_filter_4', 'momentum_filter_5', 'momentum_filter_6']
-# Add VADER sentiment features
 if SentimentIntensityAnalyzer is not None:
     FEATURES += ['vader_compound', 'vader_neg', 'vader_neu', 'vader_pos']
 NAN_HANDLING = 'mean'
 LOW_VARIANCE_THRESHOLD = 0.01
-# LightGBM params for better regularization and performance
-LGBM_PARAMS = {
-    'max_depth': 6,
-    'num_leaves': 31,
-    'learning_rate': 0.05,
-    'n_estimators': 200,
-    'reg_alpha': 0.1,
-    'reg_lambda': 0.1,
-    'objective': 'regression',
-    'metric': 'mse'
-}
+LGBM_PARAMS = {'max_depth': 6, 'num_leaves': 31, 'learning_rate': 0.05, 'n_estimators': 200, 'reg_alpha': 0.1, 'reg_lambda': 0.1, 'objective': 'regression', 'metric': 'mse'}
