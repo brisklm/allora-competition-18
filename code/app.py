@@ -48,12 +48,45 @@ TOOLS = [
     }
 ]
 
-# Enhanced for optimization: Add optional parameters for Optuna trials and objectives
-def optimize(params=None):
-    # Placeholder for Optuna optimization with enhancements for R2, directional accuracy
-    # Assume subprocess.call(['python', 'optimize_script.py']) with added args for regularization, ensembling
-    return {'status': 'optimized', 'r2': 0.15, 'directional_acc': 0.65}
+# Add endpoint for tools
+@app.route('/tools', methods=['GET'])
+def get_tools():
+    return jsonify(TOOLS)
 
-# Other functions as per original layout
+# Add optimize endpoint
+@app.route('/optimize', methods=['POST'])
+def run_optimize():
+    try:
+        # Run a script for Optuna tuning, assume tune.py exists
+        result = subprocess.run(['python', 'tune.py'], capture_output=True, text=True)
+        return jsonify({"status": "success", "output": result.stdout, "error": result.stderr})
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+# Prediction endpoint with NaN handling and low-variance check compatibility
+@app.route('/predict', methods=['POST'])
+def predict():
+    data = request.json
+    # Load model and scaler
+    model = joblib.load(model_file_path)
+    scaler = joblib.load(scaler_file_path)
+    with open(selected_features_path, 'r') as f:
+        selected_features = json.load(f)
+    # Extract features
+    features = np.array([data.get(f, np.nan) for f in selected_features]).reshape(1, -1)
+    # Robust NaN handling
+    if NAN_HANDLING == 'ffill':
+        features = np.nan_to_num(features, nan=0.0)  # Simple replacement, can be extended
+    # Low variance check (for logging, not affecting prediction)
+    variances = np.var(features, axis=0)
+    low_var = variances < LOW_VARIANCE_THRESHOLD
+    if np.any(low_var):
+        print(f"Warning: Low variance features detected")
+    # Scale and predict
+    scaled = scaler.transform(features)
+    pred = model.predict(scaled)
+    # Stabilize via simple smoothing (e.g., ensemble-like averaging if multiple models, here placeholder)
+    return jsonify({"prediction": float(pred[0])})
+
 if __name__ == '__main__':
-    app.run(port=FLASK_PORT)
+    app.run(port=FLASK_PORT, debug=True)
