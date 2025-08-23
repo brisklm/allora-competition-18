@@ -48,5 +48,37 @@ TOOLS = [
     }
 ]
 
+@app.route('/tools', methods=['GET'])
+def get_tools():
+    return jsonify(TOOLS)
+
+@app.route('/tool/<name>', methods=['POST'])
+def run_tool(name):
+    if name == 'optimize':
+        # Trigger Optuna optimization (assuming an optimize.py script exists)
+        result = subprocess.run(['python', 'optimize.py'], capture_output=True, text=True)
+        return jsonify({'result': result.stdout, 'error': result.stderr})
+    elif name == 'write_code':
+        data = request.json
+        title = data['title']
+        content = data['content']
+        # Simple syntax validation (try to compile)
+        try:
+            compile(content, title, 'exec')
+        except SyntaxError as e:
+            return jsonify({'error': str(e)}), 400
+        with open(title, 'w') as f:
+            f.write(content)
+        return jsonify({'status': 'success'})
+    elif name == 'commit_to_github':
+        data = request.json
+        message = data['message']
+        files = data['files']
+        subprocess.run(['git', 'add'] + files)
+        subprocess.run(['git', 'commit', '-m', message])
+        subprocess.run(['git', 'push'])
+        return jsonify({'status': 'committed'})
+    return jsonify({'error': 'Tool not found'}), 404
+
 if __name__ == '__main__':
-    app.run(port=FLASK_PORT)
+    app.run(port=FLASK_PORT, debug=True)
