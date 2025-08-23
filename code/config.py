@@ -3,10 +3,8 @@ from datetime import datetime
 import numpy as np
 try:
     from nltk.sentiment.vader import SentimentIntensityAnalyzer
-    sia = SentimentIntensityAnalyzer()
 except Exception:
     SentimentIntensityAnalyzer = None
-    sia = None
 try:
     import optuna
 except Exception:
@@ -32,7 +30,22 @@ CG_API_KEY = os.getenv('CG_API_KEY', 'CG-xA5NyokGEVbc4bwrvJPcpZvT')
 HELIUS_API_KEY = os.getenv('HELIUS_API_KEY', '70ed65ce-4750-4fd5-83bd-5aee9aa79ead')
 HELIUS_RPC_URL = os.getenv('HELIUS_RPC_URL', 'https://mainnet.helius-rpc.com')
 BITQUERY_API_KEY = os.getenv('BITQUERY_API_KEY', 'ory_at_LmFLzUutMY8EVb-P_PQVP9ntfwUVTV05LMal7xUqb2I.vxFLfMEoLGcu4XoVi47j-E2bspraTSrmYzCt1A4y2k')
+# Added for robust NaN handling and low-variance checks
 NAN_HANDLING = 'ffill'
-LOW_VARIANCE_THRESHOLD = 0.005
-FEATURES = ['log_return_lag1', 'log_return_lag2', 'log_return_lag3', 'log_return_lag4', 'log_return_lag5', 'log_return_lag6', 'log_return_lag7', 'sign_return', 'sign_return_lag1', 'sign_return_lag2', 'sign_return_lag3', 'sign_return_lag4', 'sign_return_lag5', 'momentum_filter_1', 'momentum_filter_2', 'momentum_filter_3', 'momentum_1', 'momentum_2', 'momentum_3', 'log_return_lag8', 'log_return_lag9', 'log_return_lag10', 'rsi_14', 'macd', 'vader_sentiment']
-LGBM_PARAMS = {'objective': 'regression', 'metric': 'rmse', 'verbose': -1, 'max_depth': 6, 'num_leaves': 31, 'learning_rate': 0.01, 'n_estimators': 1000, 'reg_alpha': 0.1, 'reg_lambda': 0.1}
+LOW_VARIANCE_THRESHOLD = 0.01
+# Extended features for better correlation and directional accuracy
+FEATURES = ['log_return_lag1', 'log_return_lag2', 'log_return_lag3', 'log_return_lag4', 'log_return_lag5', 'log_return_lag6', 'log_return_lag7', 'log_return_lag8', 'log_return_lag9', 'log_return_lag10', 'sign_return', 'sign_return_lag1', 'sign_return_lag2', 'sign_return_lag3', 'sign_return_lag4', 'sign_return_lag5', 'sign_return_lag6', 'sign_return_lag7', 'momentum_filter_1', 'momentum_filter_2', 'momentum_filter_3', 'momentum_filter_4', 'momentum_filter_5', 'momentum_1', 'momentum_2', 'vader_compound', 'vader_pos', 'vader_neg', 'vader_neu']
+# LightGBM parameters adjusted for regularization and better R2
+LGBM_PARAMS = {
+    'objective': 'regression',
+    'metric': ['rmse', 'mae'],
+    'max_depth': 8,  # Adjusted
+    'num_leaves': 25,  # Adjusted
+    'learning_rate': 0.01,
+    'feature_fraction': 0.8,
+    'bagging_fraction': 0.7,
+    'bagging_freq': 5,
+    'reg_alpha': 0.2,  # Added regularization
+    'reg_lambda': 0.2,
+    'n_estimators': 500
+}
