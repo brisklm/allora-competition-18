@@ -3,8 +3,10 @@ from datetime import datetime
 import numpy as np
 try:
     from nltk.sentiment.vader import SentimentIntensityAnalyzer
+    sia = SentimentIntensityAnalyzer()
 except Exception:
     SentimentIntensityAnalyzer = None
+    sia = None
 try:
     import optuna
 except Exception:
@@ -31,6 +33,6 @@ HELIUS_API_KEY = os.getenv('HELIUS_API_KEY', '70ed65ce-4750-4fd5-83bd-5aee9aa79e
 HELIUS_RPC_URL = os.getenv('HELIUS_RPC_URL', 'https://mainnet.helius-rpc.com')
 BITQUERY_API_KEY = os.getenv('BITQUERY_API_KEY', 'ory_at_LmFLzUutMY8EVb-P_PQVP9ntfwUVTV05LMal7xUqb2I.vxFLfMEoLGcu4XoVi47j-E2bspraTSrmYzCt1A4y2k')
 NAN_HANDLING = 'ffill'
-LOW_VARIANCE_THRESHOLD = 0.01
-FEATURES = ['log_return_lag1', 'log_return_lag2', 'log_return_lag3', 'log_return_lag4', 'log_return_lag5', 'log_return_lag6', 'log_return_lag7', 'log_return_lag8', 'log_return_lag9', 'log_return_lag10', 'sign_return', 'sign_return_lag1', 'sign_return_lag2', 'sign_return_lag3', 'sign_return_lag4', 'sign_return_lag5', 'momentum_filter_1', 'momentum_filter_2', 'momentum_filter_3', 'momentum_filter_4', 'momentum_filter_5', 'sentiment_compound', 'sentiment_pos', 'sentiment_neg', 'sentiment_neu']
-LGBM_PARAMS = {'objective': 'regression', 'metric': 'rmse', 'max_depth': 6, 'num_leaves': 31, 'learning_rate': 0.01, 'feature_fraction': 0.9, 'bagging_fraction': 0.8, 'bagging_freq': 5, 'reg_alpha': 0.1, 'reg_lambda': 0.1, 'verbose': -1}
+LOW_VARIANCE_THRESHOLD = 0.005
+FEATURES = ['log_return_lag1', 'log_return_lag2', 'log_return_lag3', 'log_return_lag4', 'log_return_lag5', 'log_return_lag6', 'log_return_lag7', 'sign_return', 'sign_return_lag1', 'sign_return_lag2', 'sign_return_lag3', 'sign_return_lag4', 'sign_return_lag5', 'momentum_filter_1', 'momentum_filter_2', 'momentum_filter_3', 'momentum_1', 'momentum_2', 'momentum_3', 'log_return_lag8', 'log_return_lag9', 'log_return_lag10', 'rsi_14', 'macd', 'vader_sentiment']
+LGBM_PARAMS = {'objective': 'regression', 'metric': 'rmse', 'verbose': -1, 'max_depth': 6, 'num_leaves': 31, 'learning_rate': 0.01, 'n_estimators': 1000, 'reg_alpha': 0.1, 'reg_lambda': 0.1}
