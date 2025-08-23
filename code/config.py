@@ -30,26 +30,29 @@ CG_API_KEY = os.getenv('CG_API_KEY', 'CG-xA5NyokGEVbc4bwrvJPcpZvT')
 HELIUS_API_KEY = os.getenv('HELIUS_API_KEY', '70ed65ce-4750-4fd5-83bd-5aee9aa79ead')
 HELIUS_RPC_URL = os.getenv('HELIUS_RPC_URL', 'https://mainnet.helius-rpc.com')
 BITQUERY_API_KEY = os.getenv('BITQUERY_API_KEY', 'ory_at_LmFLzUutMY8EVb-P_PQVP9ntfwUVTV05LMal7xUqb2I.vxFLfMEoLGcu4XoVi47j-E2bspraTSrmYzCt1A4y2k')
+NAN_HANDLING = 'fill_median'  # Robust NaN handling
+LOW_VARIANCE_THRESHOLD = 0.01  # Low-variance check
+OPTUNA_TRIALS = 200  # Increased for better tuning
+LGBM_PARAMS = {
+    'objective': 'regression',
+    'metric': 'rmse',
+    'max_depth': 6,  # Adjusted
+    'num_leaves': 31,  # Adjusted
+    'learning_rate': 0.01,
+    'n_estimators': 1000,
+    'reg_alpha': 0.1,  # Added regularization
+    'reg_lambda': 0.1,  # Added regularization
+    'bagging_fraction': 0.8,  # For ensembling/stability
+    'bagging_freq': 1,
+    'feature_fraction': 0.8,
+    'random_state': 42
+}
 # Expanded features for better prediction, including sign/log-return lags and momentum filters
 FEATURES = [
     'log_return_lag1', 'log_return_lag2', 'log_return_lag3', 'log_return_lag4', 'log_return_lag5', 'log_return_lag6', 'log_return_lag7',
-    'sign_return', 'sign_return_lag1', 'sign_return_lag2', 'sign_return_lag3', 'sign_return_lag4', 'sign_return_lag5',
-    'momentum_filter_1', 'momentum_filter_2', 'momentum_filter_3', 'momentum_filter_4', 'momentum_filter_5',
-    'momentum_14', 'momentum_30',
-    'vader_sentiment'  # Added VADER sentiment feature
+    'sign_return', 'sign_return_lag1', 'sign_return_lag2', 'sign_return_lag3', 'sign_return_lag4', 'sign_return_lag5', 'sign_return_lag6', 'sign_return_lag7',
+    'momentum_3', 'momentum_5', 'momentum_7',  # Added momentum filters for stability and correlation
+    'vader_compound' if SentimentIntensityAnalyzer else None  # Add VADER sentiment if available
 ]
-# NaN handling strategy
-NAN_HANDLING = 'mean'  # Options: 'mean', 'median', 'drop'
-# Low variance threshold for feature selection
-LOW_VARIANCE_THRESHOLD = 0.01
-# Number of Optuna trials for optional tuning
-OPTUNA_TRIALS = 100
-# Default LightGBM parameters adjusted for regularization and depth/leaves to improve R2 and directional accuracy
-LGBM_PARAMS = {
-    'max_depth': 5,
-    'num_leaves': 31,
-    'reg_alpha': 0.1,
-    'reg_lambda': 0.1,
-    'n_estimators': 200,
-    'learning_rate': 0.01
-}
+# Filter None from FEATURES
+FEATURES = [f for f in FEATURES if f is not None]
