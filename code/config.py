@@ -30,7 +30,30 @@ CG_API_KEY = os.getenv('CG_API_KEY', 'CG-xA5NyokGEVbc4bwrvJPcpZvT')
 HELIUS_API_KEY = os.getenv('HELIUS_API_KEY', '70ed65ce-4750-4fd5-83bd-5aee9aa79ead')
 HELIUS_RPC_URL = os.getenv('HELIUS_RPC_URL', 'https://mainnet.helius-rpc.com')
 BITQUERY_API_KEY = os.getenv('BITQUERY_API_KEY', 'ory_at_LmFLzUutMY8EVb-P_PQVP9ntfwUVTV05LMal7xUqb2I.vxFLfMEoLGcu4XoVi47j-E2bspraTSrmYzCt1A4y2k')
-NAN_HANDLING = 'median'
+
+# Added for optimization
+NAN_HANDLING = 'ffill'
 LOW_VARIANCE_THRESHOLD = 0.01
-FEATURES = ['log_return_lag1', 'log_return_lag2', 'log_return_lag3', 'log_return_lag4', 'log_return_lag5', 'log_return_lag6', 'log_return_lag7', 'sign_return', 'sign_return_lag1', 'sign_return_lag2', 'sign_return_lag3', 'sign_return_lag4', 'sign_return_lag5', 'momentum_filter_1', 'momentum_filter_2', 'momentum_filter_3', 'momentum_filter_4', 'momentum_filter_5', 'log_return_lag8', 'log_return_lag9', 'log_return_lag10', 'vader_compound', 'vader_pos', 'vader_neg', 'vader_neu']
-LGBM_PARAMS = {'objective': 'regression', 'metric': 'rmse', 'max_depth': 6, 'num_leaves': 31, 'learning_rate': 0.05, 'reg_alpha': 0.1, 'reg_lambda': 0.1}
+
+# Updated features with more lags, momentum filters, and VADER sentiment for better R2, directional accuracy, and correlation
+FEATURES = [
+    'log_return_lag1', 'log_return_lag2', 'log_return_lag3', 'log_return_lag4', 'log_return_lag5',
+    'log_return_lag6', 'log_return_lag7', 'log_return_lag8', 'log_return_lag9', 'log_return_lag10',
+    'sign_return', 'sign_return_lag1', 'sign_return_lag2', 'sign_return_lag3', 'sign_return_lag4',
+    'sign_return_lag5', 'sign_return_lag6', 'sign_return_lag7',
+    'momentum_filter_1', 'momentum_filter_2', 'momentum_filter_3', 'momentum_filter_4', 'momentum_filter_5',
+    'momentum_1', 'momentum_2', 'momentum_3',
+    'vader_sentiment'
+]
+
+# Model parameters with adjustments for max_depth, num_leaves, and regularization
+MODEL_PARAMS = {
+    'max_depth': 5,
+    'num_leaves': 31,
+    'reg_alpha': 0.1,
+    'reg_lambda': 0.1,
+    'n_estimators': 100
+}
+
+# For ensembling to stabilize predictions
+ENSEMBLE_MODELS = ['LightGBM', 'XGBoost', 'RandomForest']
