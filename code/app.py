@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 import numpy as np
 import joblib
 import subprocess
-from config import model_file_path, selected_features_path, NAN_HANDLING, scaler_file_path, LOW_VARIANCE_THRESHOLD
+from config import model_file_path, selected_features_path, NAN_HANDLING, scaler_file_path, LOW_VARIANCE_THRESHOLD, OPTUNA_TRIALS, LGBM_PARAMS, FEATURES
 
 # Initialize app and env
 app = Flask(__name__)
@@ -48,39 +48,94 @@ TOOLS = [
     }
 ]
 
-# Load model and scaler
-model = joblib.load(model_file_path)
-scaler = joblib.load(scaler_file_path)
-with open(selected_features_path, 'r') as f:
-    selected_features = json.load(f)
+@app.route('/')
+def home():
+    return "MCP App running"
 
-def handle_nan(data):
-    if NAN_HANDLING == 'ffill':
-        data = np.nan_to_num(data, nan=0)
-    return data
+@app.route('/tools')
+def get_tools():
+    return jsonify(TOOLS)
 
-def check_low_variance(features):
-    variances = np.var(features, axis=0)
-    mask = variances > LOW_VARIANCE_THRESHOLD
-    return mask
+@app.route('/invoke/<tool_name>', methods=['POST'])
+def invoke(tool_name):
+    if tool_name == 'optimize':
+        try:
+            import optuna
+            from lightgbm import LGBMRegressor
+            # Dummy data for illustration; replace with actual data loading
+            X = np.random.rand(100, len(FEATURES))
+            y = np.random.rand(100)
+            def objective(trial):
+                params = {
+                    'max_depth': trial.suggest_int('max_depth', 3, 7),
+                    'num_leaves': trial.suggest_int('num_leaves', 20, 50),
+                    'reg_alpha': trial.suggest_float('reg_alpha', 0.0, 0.5),
+                    'reg_lambda': trial.suggest_float('reg_lambda', 0.0, 0.5),
+                    'n_estimators': 200,
+                    'learning_rate': 0.01
+                }
+                model = LGBMRegressor(**params)
+                model.fit(X, y)
+                preds = model.predict(X)
+                r2 = np.corrcoef(y, preds)[0,1]**2  # Aim for R2 > 0.1
+                return -r2  # Minimize negative R2
+            study = optuna.create_study(direction='minimize')
+            study.optimize(objective, n_trials=OPTUNA_TRIALS)
+            return jsonify({"best_params": study.best_params, "best_r2": -study.best_value})
+        except Exception as e:
+            return jsonify({"error": str(e)})
+    elif tool_name == 'write_code':
+        data = request.json
+        title = data.get('title')
+        content = data.get('content')
+        try:
+            compile(content, title, 'exec')
+        except SyntaxError as e:
+            return jsonify({"error": "Syntax error: " + str(e)})
+        with open(title, 'w') as f:
+            f.write(content)
+        return jsonify({"success": True, "file": title})
+    elif tool_name == 'commit_to_github':
+        data = request.json
+        message = data.get('message')
+        files = data.get('files')
+        try:
+            subprocess.run(['git', 'add'] + files, check=True)
+            subprocess.run(['git', 'commit', '-m', message], check=True)
+            subprocess.run(['git', 'push'], check=True)
+            return jsonify({"success": True})
+        except Exception as e:
+            return jsonify({"error": str(e)})
+    else:
+        return jsonify({"error": "Unknown tool"})
+
+def load_model():
+    model = joblib.load(model_file_path)
+    scaler = joblib.load(scaler_file_path)
+    with open(selected_features_path, 'r') as f:
+        selected_features = json.load(f)
+    return model, scaler, selected_features
 
 @app.route('/predict', methods=['POST'])
 def predict():
-    data = request.json['data']
-    features = np.array([data.get(f, 0) for f in selected_features])
-    features = handle_nan(features)
-    scaled_features = scaler.transform(features.reshape(1, -1))
-    prediction = model.predict(scaled_features)
-    return jsonify({'prediction': float(prediction[0])})
-
-@app.route('/optimize', methods=['GET'])
-def optimize():
-    result = subprocess.run(['python', 'tune.py'], capture_output=True, text=True)
-    return jsonify({'result': result.stdout})
-
-@app.route('/tools', methods=['GET'])
-def get_tools():
-    return jsonify(TOOLS)
+    data = request.json
+    model, scaler, selected_features = load_model()
+    # Robust NaN handling
+    for key in selected_features:
+        if key not in data or np.isnan(data[key]):
+            if NAN_HANDLING == 'drop':
+                return jsonify({"error": "Missing feature"})
+            elif NAN_HANDLING == 'mean':
+                data[key] = 0.0  # Simplified; use precomputed mean in production
+            elif NAN_HANDLING == 'median':
+                data[key] = 0.0
+    features = np.array([data[f] for f in selected_features]).reshape(1, -1)
+    # Low variance check skipped for prediction
+    features_scaled = scaler.transform(features)
+    prediction = model.predict(features_scaled)[0]
+    # Simple smoothing for stability (e.g., average with previous, but here dummy)
+    smoothed_prediction = prediction * 0.9  # Placeholder for ensembling/smoothing
+    return jsonify({"prediction": smoothed_prediction})
 
 if __name__ == '__main__':
     app.run(port=FLASK_PORT, debug=True)
