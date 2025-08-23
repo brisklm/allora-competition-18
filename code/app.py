@@ -48,94 +48,48 @@ TOOLS = [
     }
 ]
 
-@app.route('/')
-def home():
-    return "MCP App running"
-
-@app.route('/tools')
+@app.route('/tools', methods=['GET'])
 def get_tools():
     return jsonify(TOOLS)
 
-@app.route('/invoke/<tool_name>', methods=['POST'])
-def invoke(tool_name):
+@app.route('/call_tool', methods=['POST'])
+def call_tool():
+    data = request.json
+    tool_name = data.get('tool')
+    parameters = data.get('parameters', {})
     if tool_name == 'optimize':
         try:
-            import optuna
-            from lightgbm import LGBMRegressor
-            # Dummy data for illustration; replace with actual data loading
-            X = np.random.rand(100, len(FEATURES))
-            y = np.random.rand(100)
-            def objective(trial):
-                params = {
-                    'max_depth': trial.suggest_int('max_depth', 3, 7),
-                    'num_leaves': trial.suggest_int('num_leaves', 20, 50),
-                    'reg_alpha': trial.suggest_float('reg_alpha', 0.0, 0.5),
-                    'reg_lambda': trial.suggest_float('reg_lambda', 0.0, 0.5),
-                    'n_estimators': 200,
-                    'learning_rate': 0.01
-                }
-                model = LGBMRegressor(**params)
-                model.fit(X, y)
-                preds = model.predict(X)
-                r2 = np.corrcoef(y, preds)[0,1]**2  # Aim for R2 > 0.1
-                return -r2  # Minimize negative R2
-            study = optuna.create_study(direction='minimize')
-            study.optimize(objective, n_trials=OPTUNA_TRIALS)
-            return jsonify({"best_params": study.best_params, "best_r2": -study.best_value})
+            # Assume train.py handles Optuna optimization with improved params
+            result = subprocess.run(['python', 'train.py'], capture_output=True, text=True)
+            return jsonify({"status": "success", "output": result.stdout})
         except Exception as e:
-            return jsonify({"error": str(e)})
+            return jsonify({"status": "error", "message": str(e)})
     elif tool_name == 'write_code':
-        data = request.json
-        title = data.get('title')
-        content = data.get('content')
+        title = parameters.get('title')
+        content = parameters.get('content')
+        if not title or not content:
+            return jsonify({"status": "error", "message": "Missing title or content"})
         try:
             compile(content, title, 'exec')
+            with open(title, 'w') as f:
+                f.write(content)
+            return jsonify({"status": "success"})
         except SyntaxError as e:
-            return jsonify({"error": "Syntax error: " + str(e)})
-        with open(title, 'w') as f:
-            f.write(content)
-        return jsonify({"success": True, "file": title})
+            return jsonify({"status": "error", "message": str(e)})
     elif tool_name == 'commit_to_github':
-        data = request.json
-        message = data.get('message')
-        files = data.get('files')
+        message = parameters.get('message')
+        files = parameters.get('files', [])
+        if not message or not files:
+            return jsonify({"status": "error", "message": "Missing message or files"})
         try:
-            subprocess.run(['git', 'add'] + files, check=True)
+            for file in files:
+                subprocess.run(['git', 'add', file], check=True)
             subprocess.run(['git', 'commit', '-m', message], check=True)
             subprocess.run(['git', 'push'], check=True)
-            return jsonify({"success": True})
+            return jsonify({"status": "success"})
         except Exception as e:
-            return jsonify({"error": str(e)})
-    else:
-        return jsonify({"error": "Unknown tool"})
-
-def load_model():
-    model = joblib.load(model_file_path)
-    scaler = joblib.load(scaler_file_path)
-    with open(selected_features_path, 'r') as f:
-        selected_features = json.load(f)
-    return model, scaler, selected_features
-
-@app.route('/predict', methods=['POST'])
-def predict():
-    data = request.json
-    model, scaler, selected_features = load_model()
-    # Robust NaN handling
-    for key in selected_features:
-        if key not in data or np.isnan(data[key]):
-            if NAN_HANDLING == 'drop':
-                return jsonify({"error": "Missing feature"})
-            elif NAN_HANDLING == 'mean':
-                data[key] = 0.0  # Simplified; use precomputed mean in production
-            elif NAN_HANDLING == 'median':
-                data[key] = 0.0
-    features = np.array([data[f] for f in selected_features]).reshape(1, -1)
-    # Low variance check skipped for prediction
-    features_scaled = scaler.transform(features)
-    prediction = model.predict(features_scaled)[0]
-    # Simple smoothing for stability (e.g., average with previous, but here dummy)
-    smoothed_prediction = prediction * 0.9  # Placeholder for ensembling/smoothing
-    return jsonify({"prediction": smoothed_prediction})
+            return jsonify({"status": "error", "message": str(e)})
+    return jsonify({"status": "error", "message": "Unknown tool"})
 
 if __name__ == '__main__':
     app.run(port=FLASK_PORT, debug=True)
