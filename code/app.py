@@ -52,52 +52,38 @@ TOOLS = [
 def get_tools():
     return jsonify(TOOLS)
 
-@app.route('/run_tool', methods=['POST'])
-def run_tool():
-    data = request.get_json()
-    name = data.get('name')
-    parameters = data.get('parameters', {})
+@app.route('/tool/<name>', methods=['POST'])
+def execute_tool(name):
     if name == 'optimize':
-        # Trigger optimization with Optuna, ensuring NaN handling and low-variance checks
         try:
-            result = subprocess.run(['python', 'optimize.py'], capture_output=True, text=True)
-            if result.returncode != 0:
-                return jsonify({'error': result.stderr}), 500
-            return jsonify({'result': result.stdout})
+            result = subprocess.run(['python', 'tune.py'], capture_output=True, text=True)
+            return jsonify({'status': 'success', 'output': result.stdout})
         except Exception as e:
-            return jsonify({'error': str(e)}), 500
+            return jsonify({'status': 'error', 'message': str(e)})
     elif name == 'write_code':
-        title = parameters.get('title')
-        content = parameters.get('content')
-        artifact_id = parameters.get('artifact_id')
-        artifact_version_id = parameters.get('artifact_version_id')
-        contentType = parameters.get('contentType', 'text/python')
-        if not title or not content:
-            return jsonify({'error': 'Missing title or content'}), 400
-        # Validate syntax for python
-        if contentType == 'text/python':
-            try:
-                compile(content, title, 'exec')
-            except SyntaxError as e:
-                return jsonify({'error': f'Syntax error: {str(e)}'}), 400
-        # Write to file
+        data = request.json
+        title = data.get('title')
+        content = data.get('content')
+        try:
+            compile(content, title, 'exec')
+        except SyntaxError as e:
+            return jsonify({'status': 'error', 'message': str(e)})
         with open(title, 'w') as f:
             f.write(content)
-        return jsonify({'success': True, 'artifact_id': artifact_id or 'new', 'artifact_version_id': artifact_version_id or 'v1'})
+        return jsonify({'status': 'success', 'message': f'Wrote {title}'})
     elif name == 'commit_to_github':
-        message = parameters.get('message')
-        files = parameters.get('files')
-        if not message or not files:
-            return jsonify({'error': 'Missing message or files'}), 400
+        data = request.json
+        message = data.get('message')
+        files = data.get('files')
         try:
             subprocess.run(['git', 'add'] + files, check=True)
             subprocess.run(['git', 'commit', '-m', message], check=True)
             subprocess.run(['git', 'push'], check=True)
-            return jsonify({'success': True})
-        except subprocess.CalledProcessError as e:
-            return jsonify({'error': str(e)}), 500
+            return jsonify({'status': 'success'})
+        except Exception as e:
+            return jsonify({'status': 'error', 'message': str(e)})
     else:
-        return jsonify({'error': 'Unknown tool'}), 404
+        return jsonify({'status': 'error', 'message': 'Tool not found'}), 404
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=FLASK_PORT)
+    app.run(port=FLASK_PORT, debug=True)
