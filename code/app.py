@@ -2,6 +2,7 @@ import os
 import json
 from datetime import datetime
 from flask import Flask, request, Response, jsonify
+import ast
 from dotenv import load_dotenv
 import numpy as np
 import joblib
@@ -48,45 +49,70 @@ TOOLS = [
     }
 ]
 
-# Add endpoint for tools
-@app.route('/tools', methods=['GET'])
-def get_tools():
-    return jsonify(TOOLS)
+# Load model and scaler
+model = joblib.load(model_file_path)
+scaler = joblib.load(scaler_file_path)
+with open(selected_features_path, 'r') as f:
+    selected_features = json.load(f)
 
-# Add optimize endpoint
-@app.route('/optimize', methods=['POST'])
-def run_optimize():
-    try:
-        # Run a script for Optuna tuning, assume tune.py exists
-        result = subprocess.run(['python', 'tune.py'], capture_output=True, text=True)
-        return jsonify({"status": "success", "output": result.stdout, "error": result.stderr})
-    except Exception as e:
-        return jsonify({"error": str(e)})
+@app.route('/')
+def home():
+    return f"MCP Version: {MCP_VERSION}"
 
-# Prediction endpoint with NaN handling and low-variance check compatibility
+@app.route('/health')
+def health():
+    return "OK"
+
 @app.route('/predict', methods=['POST'])
 def predict():
     data = request.json
-    # Load model and scaler
-    model = joblib.load(model_file_path)
-    scaler = joblib.load(scaler_file_path)
-    with open(selected_features_path, 'r') as f:
-        selected_features = json.load(f)
-    # Extract features
-    features = np.array([data.get(f, np.nan) for f in selected_features]).reshape(1, -1)
+    features = [data.get(f, np.nan) for f in selected_features]
     # Robust NaN handling
-    if NAN_HANDLING == 'ffill':
-        features = np.nan_to_num(features, nan=0.0)  # Simple replacement, can be extended
-    # Low variance check (for logging, not affecting prediction)
-    variances = np.var(features, axis=0)
-    low_var = variances < LOW_VARIANCE_THRESHOLD
-    if np.any(low_var):
-        print(f"Warning: Low variance features detected")
-    # Scale and predict
-    scaled = scaler.transform(features)
-    pred = model.predict(scaled)
-    # Stabilize via simple smoothing (e.g., ensemble-like averaging if multiple models, here placeholder)
-    return jsonify({"prediction": float(pred[0])})
+    if NAN_HANDLING == 'median':
+        fill_value = np.nanmedian(features)
+    else:
+        fill_value = 0
+    features = np.nan_to_num(features, nan=fill_value)
+    # Low variance check (skip if variance below threshold, but for prediction, assume features are selected)
+    if np.var(features) < LOW_VARIANCE_THRESHOLD:
+        return jsonify({'prediction': 0, 'warning': 'Low variance input'})
+    features_scaled = scaler.transform([features])
+    prediction = model.predict(features_scaled)[0]
+    # Stabilize via simple smoothing (e.g., ensemble-like averaging if multiple models, but here placeholder)
+    return jsonify({'prediction': prediction})
+
+@app.route('/tools')
+def get_tools():
+    return jsonify(TOOLS)
+
+@app.route('/invoke/<tool_name>', methods=['POST'])
+def invoke(tool_name):
+    if tool_name == 'optimize':
+        # Trigger Optuna-based optimization for LightGBM with regularization
+        result = subprocess.run(['python', 'optimize.py'], capture_output=True)  # Assume optimize.py handles Optuna tuning with suggestions
+        return jsonify({'result': result.stdout.decode()})
+    elif tool_name == 'write_code':
+        params = request.json
+        title = params['title']
+        content = params['content']
+        try:
+            ast.parse(content)
+            with open(title, 'w') as f:
+                f.write(content)
+            return jsonify({'status': 'success'})
+        except SyntaxError as e:
+            return jsonify({'status': 'error', 'message': str(e)})
+    elif tool_name == 'commit_to_github':
+        params = request.json
+        message = params['message']
+        files = params['files']
+        for file in files:
+            subprocess.run(['git', 'add', file])
+        subprocess.run(['git', 'commit', '-m', message])
+        subprocess.run(['git', 'push'])
+        return jsonify({'status': 'committed'})
+    else:
+        return jsonify({'error': 'Tool not found'}), 404
 
 if __name__ == '__main__':
-    app.run(port=FLASK_PORT, debug=True)
+    app.run(port=FLASK_PORT, host='0.0.0.0')
