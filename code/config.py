@@ -32,24 +32,27 @@ CG_API_KEY = os.getenv('CG_API_KEY', 'CG-xA5NyokGEVbc4bwrvJPcpZvT')
 HELIUS_API_KEY = os.getenv('HELIUS_API_KEY', '70ed65ce-4750-4fd5-83bd-5aee9aa79ead')
 HELIUS_RPC_URL = os.getenv('HELIUS_RPC_URL', 'https://mainnet.helius-rpc.com')
 BITQUERY_API_KEY = os.getenv('BITQUERY_API_KEY', 'ory_at_LmFLzUutMY8EVb-P_PQVP9ntfwUVTV05LMal7xUqb2I.vxFLfMEoLGcu4XoVi47j-E2bspraTSrmYzCt1A4y2k')
-FEATURES = [
-    'log_return_lag1', 'log_return_lag2', 'log_return_lag3', 'log_return_lag4', 'log_return_lag5', 'log_return_lag6', 'log_return_lag7',
-    'sign_return', 'sign_return_lag1', 'sign_return_lag2', 'sign_return_lag3', 'sign_return_lag4', 'sign_return_lag5', 'sign_return_lag6', 'sign_return_lag7',
-    'momentum_3', 'momentum_5', 'momentum_7',
-    'sentiment_compound', 'sentiment_pos', 'sentiment_neg', 'sentiment_neu'
-]
-NAN_HANDLING = 'ffill'
-LOW_VARIANCE_THRESHOLD = 0.005
-OPTUNA_TRIALS = 200
+NAN_HANDLING = 'interpolate'  # Robust NaN handling with interpolation
+LOW_VARIANCE_THRESHOLD = 0.001  # Tighter threshold for low-variance checks
+OPTUNA_TRIALS = 200  # Increased for better tuning
 LGBM_PARAMS = {
     'objective': 'regression',
     'metric': 'rmse',
-    'max_depth': 8,
-    'num_leaves': 31,
-    'reg_alpha': 0.1,
-    'reg_lambda': 0.1,
-    'n_estimators': 200,
+    'verbose': -1,
     'learning_rate': 0.01,
-    'bagging_freq': 1,
-    'bagging_fraction': 0.8
+    'max_depth': 5,  # Adjusted for control
+    'num_leaves': 32,  # Adjusted
+    'reg_alpha': 0.2,  # Added regularization
+    'reg_lambda': 0.2,  # Added regularization
+    'n_estimators': 1500,  # Increased for better fit
+    'subsample': 0.8,  # For ensembling effect
+    'colsample_bytree': 0.8  # For feature subsampling
 }
+FEATURES = [
+    'log_return_lag1', 'log_return_lag2', 'log_return_lag3', 'log_return_lag4', 'log_return_lag5', 'log_return_lag6', 'log_return_lag7',
+    'log_return_lag8', 'log_return_lag9', 'log_return_lag10',  # Added more lags
+    'sign_return', 'sign_return_lag1', 'sign_return_lag2', 'sign_return_lag3', 'sign_return_lag4', 'sign_return_lag5', 'sign_return_lag6', 'sign_return_lag7',
+    'momentum_3', 'momentum_5', 'momentum_10'  # Added momentum filters
+]
+if SentimentIntensityAnalyzer is not None:
+    FEATURES.append('sentiment_compound')  # Added VADER sentiment
